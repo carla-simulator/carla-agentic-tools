@@ -28,45 +28,83 @@ picked up — no registration step. Discovery is computed relative to
 
 ## Install
 
+Run `setup.sh`, pointing it at the CARLA instance you want to drive:
+
 ```bash
-pip install -e .        # editable install from a checkout (keeps skills/ resolvable)
+bash setup.sh --carla /path/to/your/carla --ue4 /path/to/your/UnrealEngine_4.26
 ```
 
-Requires Python ≥ 3.10 and `mcp>=1.2.0` (pulled in automatically). The console
-script `carla-agentic-tools` serves over stdio.
+It installs the server (`pip install -e .`) into the active Python, verifies the
+tools and skill discovery, then writes an `.mcp.json` **into the CARLA checkout**
+so any MCP client run from there auto-detects the server (the entry is merged in;
+other servers already there are preserved). `--carla` may be omitted if `CARLA_UE4_ROOT`
+is exported; `--ue4` likewise falls back to `$UE4_ROOT`. Pick the interpreter with
+`PYTHON=python3.11 bash setup.sh …`.
 
-## Register with an MCP client
+Requires Python ≥ 3.10 and `mcp>=1.2.0` (pulled in automatically). The baked
+`CARLA_UE4_ROOT` / `UE4_ROOT` are defaults only — a live export of either wins at
+launch. Remove everything with:
+
+```bash
+bash setup.sh --uninstall --carla /path/to/your/carla
+```
+
+This drops the server entry from the checkout's `.mcp.json` and pip-uninstalls
+the package.
+
+## Registering with an MCP client
+
+`setup.sh` writes the registration for you: an `.mcp.json` inside the CARLA
+checkout that Claude Code and most MCP clients auto-detect when launched from
+there. Nothing else to configure — start the client in the checkout and approve
+the `carla-agentic-tools` server. It then exposes three tools: `list_skills`,
+`read_skill(name)`, `check_prerequisites(name)`.
+
+The generated entry looks like this (paths come from your `--carla`/`--ue4`):
 
 ```json
 {
   "mcpServers": {
     "carla-agentic-tools": {
-      "command": "carla-agentic-tools",
+      "type": "stdio",
+      "command": "/usr/bin/python3",
+      "args": ["-m", "carla_agentic_tools.server"],
       "env": {
-        "CARLA_UE4_ROOT": "/path/to/your/carla",
-        "UE4_ROOT": "/path/to/your/UnrealEngine_4.26"
+        "CARLA_UE4_ROOT": "${CARLA_UE4_ROOT:-/path/to/your/carla}",
+        "UE4_ROOT": "${UE4_ROOT:-/path/to/your/UnrealEngine_4.26}"
       }
     }
   }
 }
 ```
 
-The client then sees three tools: `list_skills`, `read_skill(name)`,
-`check_prerequisites(name)`.
+For detection from any directory (Claude Code user scope) instead of only the
+checkout, run `claude mcp add carla-agentic-tools --scope user -- <python> -m
+carla_agentic_tools.server` (setup.sh prints the exact line).
 
 ## Targeting a CARLA instance
 
-The skills operate on a real, built CARLA + UE4. Point them at the instance you
-want with two environment variables:
+The skills operate on a real, built CARLA + UE4, chosen via two variables:
 
-| Var | Meaning |
-|---|---|
-| `CARLA_UE4_ROOT` | the carla source checkout (branch `ue4-dev`) to build/package |
-| `UE4_ROOT` | the built CarlaUnreal UE 4.26 fork |
+| Var | Meaning | Setup flag |
+|---|---|---|
+| `CARLA_UE4_ROOT` | the carla source checkout (branch `ue4-dev`) to build/package | `--carla` |
+| `UE4_ROOT` | the built CarlaUnreal UE 4.26 fork | `--ue4` |
 
-`CARLA_UE4_ROOT` also auto-resolves to `$PWD` when you run a skill from within a
-checkout; otherwise export it. `check_prerequisites` fails loudly, naming the
-paths it checked, when either is missing or wrong.
+Point setup at a specific instance with the flags:
+
+```bash
+bash setup.sh --carla /path/to/your/carla --ue4 /path/to/your/UnrealEngine_4.26
+```
+
+Each flag is **baked as a default** into the generated `.mcp.json`
+(`${VAR:-<baked>}`), so the server starts already targeting that instance. A
+flag falls back to the same-named variable exported when you run setup, and at
+launch a live export still wins over the baked default — so you can override
+per-run without re-running setup. To retarget permanently, re-run setup with new
+flags. `CARLA_UE4_ROOT` also auto-resolves to `$PWD` when a skill runs from
+inside a checkout; `check_prerequisites` fails loudly, naming the paths it
+checked, when either is missing or wrong.
 
 ## Running a skill directly (no server)
 
