@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carla-agentic-tools"
+version = "0.1.0"
+description = "Standalone MCP server exposing the CARLA authoring/build skill registry."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "mcp>=1.2.0",
+]
+
+[project.scripts]
+carla-agentic-tools = "carla_agentic_tools.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Skills ship as package data, not Python modules; they are discovered at
+# runtime relative to the repo root (skills/<name>/SKILL.md), so no packaging
+# of the skills/ tree into the wheel is required for an editable install. For a
+# built wheel, install from a checkout (pip install -e .) so skills/ resolves.
