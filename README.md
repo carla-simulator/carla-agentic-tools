@@ -128,15 +128,8 @@ full procedure, knobs (`PACKAGE_DEST`, `CLEAN_INTERMEDIATE`, …), and gotchas.
 
 Drop a new `skills/<name>/` directory containing at minimum a `SKILL.md` (with a
 `description:` line) and, for prerequisite checks, a `scripts/check_env.sh`. It is
-discovered automatically on the next server start.
-
-For how to structure and write one, see the [`author-carla-skill`](skills/author-carla-skill/SKILL.md)
-skill: the repo's [layout and conventions](skills/author-carla-skill/references/conventions.md)
-and copy-paste templates
-([SKILL.md](skills/author-carla-skill/assets/SKILL.template.md),
-[env.sh](skills/author-carla-skill/assets/env.sh.template),
-[check_env.sh](skills/author-carla-skill/assets/check_env.sh.template)).
-`package-carla-ue4` is the worked example.
+discovered automatically on the next server start. `package-carla-ue4` is the
+worked example to model a new skill on.
 
 ## License
 
