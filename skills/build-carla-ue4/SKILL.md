@@ -94,13 +94,13 @@ export CARLA_UE4_ROOT=/path/to/carla   # or run from inside the checkout
 
 bash scripts/check_env.sh
 bash scripts/01_install_deps.sh          # sudo — run in a real terminal (L11)
-bash scripts/02_client_env.sh &          # installs deps into the active env
-bash scripts/03_build_ue4.sh &           # engine — parallel, long
-bash scripts/05_fetch_content.sh &       # content — parallel, long
+bash scripts/02_client_env.sh &
+bash scripts/03_build_ue4.sh &           # long
+bash scripts/05_fetch_content.sh &       # long
 wait
-bash scripts/06_build_editor.sh          # server: make CarlaUE4Editor (TARGET=launch to open the editor)
-bash scripts/04_build_pythonapi.sh       # PythonAPI wheel -> active env
-bash scripts/07_verify.sh                # boots from-source server + generate_traffic.py
+bash scripts/06_build_editor.sh          # TARGET=launch also opens the editor UI
+bash scripts/04_build_pythonapi.sh
+bash scripts/07_verify.sh
 
 # cook a distributable package (separate skill), only if you need one:
 #   bash ../package-carla-ue4/scripts/package.sh
@@ -119,17 +119,14 @@ bash scripts/07_verify.sh                # boots from-source server + generate_t
 | 06 | `scripts/06_build_editor.sh` | **server** — `make CarlaUE4Editor` (Carla plugin + CarlaTools); `TARGET=launch` → `make launch` (opt-in editor UI) | needs 03; incremental, no cook; skips if plugin `.so` built (`FORCE=1`) |
 | 07 | `scripts/07_verify.sh` | boot **from-source** server via [[run-carla-server]] (uncooked `-nullrhi`), run `generate_traffic.py` | proof; needs 04+05+06 |
 
-Dependency graph: `01,02` independent; `03` & `05` independent (run in parallel);
-`04` needs `02+03`; `06` needs `03`; `07` needs `04+05+06`.
-
 Step 06 (`server`) doubles as the cheap incremental recompile after touching
 `Unreal/CarlaUE4/Plugins/` — binaries only, no cook — and is the target
 [[add-carla-vehicle]] points at when it reports
 `STATUS=REBUILD_CARLATOOLS_REQUIRED`. (Packaging/running stay out of scope — see
 "Scope".)
 
-Every step sources `scripts/env.sh` (roots + tuning) and the Python steps source
-`scripts/activate_env.sh` (resolves the active interpreter, manager-agnostic).
+Every step sources `scripts/env.sh`, which resolves the roots and — for the
+Python steps — the active interpreter, assuming no environment manager.
 **Never run `make CarlaUE4Editor`/`make PythonAPI` outside the steps with
 `UE4_ROOT` unset** — the generated compiler wrapper bakes a broken path and all
 compiles fail until it is regenerated (L16).
@@ -137,13 +134,13 @@ compiles fail until it is regenerated (L16).
 ## Python client env (no manager assumed)
 
 The client build (boost.python bindings + wheel) must bind to **one**
-interpreter, so `scripts/activate_env.sh` derives the exact X.Y of the **active**
+interpreter, so `scripts/env.sh` derives the exact X.Y of the **active**
 env's `python3` and forwards `--python-version` to both stages (L7). You bring
 the env; the skill never creates one:
 
 - Activate any env before step 02 (venv/conda/pyenv/system).
-- Non-interactive? Point `CARLA_ENV_ACTIVATE` at its activate script, or rely on
-  a project `.envrc` if `direnv` is installed — both are optional pickups.
+- Non-interactive? Point `CARLA_ENV_ACTIVATE` at its activate script — an
+  optional hook, and the only one the skill looks at.
 - Set `CARLA_PY_VERSION` **only** to force a specific minor (e.g. `3.10`); it
   must then resolve as `python<pin>` inside that env. Left unset, the active
   interpreter's own minor is used.
@@ -200,7 +197,7 @@ bash scripts/02_client_env.sh          # installs deps + numpy<2 into the venv
 bash scripts/04_build_pythonapi.sh     # boost + wheel bind to the venv's python3.10
 ```
 
-`activate_env.sh` resolves the venv's interpreter — no `conda` involved. Result:
+`env.sh` resolves the venv's interpreter. Result:
 the wheel installed into `~/carla-client`.
 
 **Example 3: rebuild only the server / CarlaTools editor modules**
@@ -248,7 +245,7 @@ Solution: `rm -f Build/clang{,++}.sh` and rerun via the skill step (which export
 Cause: numpy ≥ 2 in the env (L6), or boost and the wheel bound to different
 interpreters (L7).
 Solution: ensure `numpy<2` (step 02), and drive the build through step 04 so
-`activate_env.sh` keeps one interpreter across boost + wheel.
+`env.sh` keeps one interpreter across boost + wheel.
 
 **Error: `sudo: a terminal is required` (step 01)**
 Cause: the non-interactive shell has no TTY for sudo (L11).

@@ -64,7 +64,7 @@ def python_with_carla():
     """An interpreter that can `import carla` -- needed for crosswalk extraction.
 
     No environment manager is assumed (conventions): whatever is active wins,
-    then this script's own interpreter. Nothing here knows about .venv/conda."""
+    then this script's own interpreter. No environment manager is assumed."""
     for py in (shutil.which("python3"), sys.executable):
         if py and subprocess.run([py, "-c", "import carla"],
                                  capture_output=True).returncode == 0:

@@ -12,17 +12,8 @@ MAP_DIR="${1:-}"
 # Capture an EXPLICIT caller pin; env.sh sets no CARLA_PY_VERSION default, so the
 # active `python3` is what we check unless the caller pinned one.
 _PYV_PIN="${CARLA_PY_VERSION:-}"
-# Pick up the same project-local env the import will use (direnv .envrc,
-# CARLA_ENV_ACTIVATE). The .envrc lives in the CARLA checkout, not here, so try
-# $PWD first (the checkout when the agent runs from inside it), then the root.
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-carla_load_local_env "${PWD}"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh" >/dev/null
-# `|| true`: keeps this a single successful statement under `set -u` even when
-# CARLA_UE4_ROOT is empty (env.sh no longer imposes -e on its sourcers).
-[ -n "${CARLA_UE4_ROOT:-}" ] && carla_load_local_env "${CARLA_UE4_ROOT}" || true
 CARLA_PY_VERSION="${_PYV_PIN}"
 
 FAIL=0
@@ -126,7 +117,7 @@ RECAST="${CARLA_UE4_ROOT}/Util/DockerUtils/dist/RecastBuilder"
 if [ -x "${FBX2OBJ}" ]; then
   pass "FBX2OBJ present — pedestrian navmesh can be generated"
 elif command -v "${BLENDER:-blender}" >/dev/null 2>&1; then
-  warn "FBX2OBJ missing (${FBX2OBJ}) — no pedestrian navmesh. Install it: bash ${_SKILL_SCRIPTS_DIR:-scripts}/install_fbx2obj.sh"
+  warn "FBX2OBJ missing (${FBX2OBJ}) — no pedestrian navmesh. Install it: bash ${HERE}/install_fbx2obj.sh"
 else
   warn "FBX2OBJ missing (${FBX2OBJ}) and blender not found — no pedestrian navmesh. Install Blender (or set BLENDER), then run install_fbx2obj.sh"
 fi

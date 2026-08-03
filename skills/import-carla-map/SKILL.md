@@ -2,7 +2,7 @@
 name: import-carla-map
 description: Imports a custom RoadRunner map (FBX geometry + XODR OpenDRIVE) into a CARLA source build as a drivable map — reads the map from the directory the user names, runs CARLA's Import.py to cook the level, Traffic Manager graph and (standard maps only) pedestrian navmesh, and verifies it loads on a server. Handles both standard maps and large tiled maps; large maps get no navmesh, matching upstream CARLA. Use when the user asks to "import a map into CARLA", "add a custom/RoadRunner map", "ingest an FBX+XODR map", "make import", bring in a "large/tiled map", or fix missing walkers / a missing pedestrian navmesh.
 license: MIT
-compatibility: Linux. Requires a built CarlaUnreal UE 4.26 fork (UE4_ROOT), a built CARLA checkout, AND a python that can `import carla` — map import (unlike prop import) runs Import.py in-process. This skill checks all three and defers to build-carla-ue4; it compiles nothing (it calls Import.py directly, not `make import`, which would relink LibCarla, the editor and the wheel first). A standard map is one editor boot (~a couple of minutes); a large map scales with tile count. The pedestrian navmesh additionally needs Blender 3.3+, and is standard-maps-only.
+compatibility: Linux. Requires a built CarlaUnreal UE 4.26 fork (UE4_ROOT), a built CARLA checkout, and a python that can `import carla` — Import.py runs in-process. Compiles nothing; defers to build-carla-ue4. A standard map is one editor boot (~minutes); a large map scales with tile count. The pedestrian navmesh needs Blender 3.3+ and is standard-maps-only.
 metadata:
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
@@ -29,8 +29,7 @@ python3 scripts/import_map.py <map-dir> --package BigCity --tile-size 1000 --bat
 Both go through the same Import.py pipeline; the large-map path is just a
 branch on the tile naming. The map lands at
 `/Game/<package>/Maps/<name>/<name>`, cooked with its Traffic Manager route
-graph and — for standard maps only — its pedestrian navmesh. Large maps get no
-navmesh and cannot be given one; walkers are unsupported there (Step 4).
+graph and — for standard maps only — its pedestrian navmesh (Step 4).
 
 > Pipeline internals, naming rules, the tiled branch and the M-lessons:
 > [`references/maps.md`](references/maps.md).
@@ -73,16 +72,15 @@ env; the skill never creates one:
 
 - Activate it in the same shell before Step 2 (venv/conda/pyenv/system — no
   manager is assumed).
-- Non-interactive? Point `CARLA_ENV_ACTIVATE` at its activate script, or rely on a
-  project `.envrc` if `direnv` is installed — `scripts/activate_env.sh` picks up
-  either, and both `check_env.sh` and `import_map.py` use it.
+- Non-interactive? Point `CARLA_ENV_ACTIVATE` at its activate script — an
+  optional hook `scripts/env.sh` sources, used by both `check_env.sh` and
+  `import_map.py`. Nothing else is detected.
 - `check_env.sh` prints the interpreter it resolved (`client python: … (imports
   carla)`); that line is the one to trust, not which env you think is active.
 
 A missing `FBX2OBJ` is a **warning**, and only for a standard map: it imports and
 drives, but gets no pedestrian navmesh. Do Step 4 first if that map needs
-walkers, so the import builds the navmesh in one pass. Irrelevant for a large
-map, which never gets a navmesh either way.
+walkers, so the import builds the navmesh in one pass.
 
 ### Step 2: Import
 
@@ -160,9 +158,9 @@ in a window. Never `pkill -f` anything matching this shell's own command line
 
 `verify_map.py` confirms the right map loaded, the OpenDRIVE parsed into a road
 network (spawn points + a test vehicle), and — with `--nav` — that a pedestrian
-can be placed on the navmesh. **Never pass `--nav` for a large map**: it has no
-navmesh and never will (Step 4). For a standard map, drop `--nav` only until
-Step 4 has installed `FBX2OBJ` and built one.
+can be placed on the navmesh. **Never pass `--nav` for a large map** (Step 4).
+For a standard map, drop `--nav` only until Step 4 has installed `FBX2OBJ` and
+built one.
 
 ### Step 4: Pedestrian navmesh (standard maps, walkers only)
 
@@ -248,12 +246,7 @@ User says: "import the map in ~/dev/Maps/MyTown into CARLA"
 bash scripts/check_env.sh ~/dev/Maps/MyTown
 bash scripts/install_fbx2obj.sh            # once per checkout, for the navmesh
 python3 scripts/import_map.py ~/dev/Maps/MyTown --package MyTown
-# verify
-bash ../run-carla-server/scripts/run_server.sh /Game/MyTown/Maps/MyTown/MyTown 2000 >/tmp/s.log 2>&1 &
-SERVER=$!
-until nc -z 127.0.0.1 2000; do sleep 1; done
-python3 scripts/verify_map.py --map MyTown --nav
-kill "${SERVER}" 2>/dev/null
+# then verify as in Step 3, with --nav
 ```
 Result: `/Game/MyTown/Maps/MyTown/MyTown` loads in the editor and on a source
 server, with traffic and pedestrian nav. Nothing is cooked — see Example 4 to
@@ -274,7 +267,7 @@ User says: "add the large tiled city in Import/Maps/BigCity — the FBX is split
 ```bash
 python3 scripts/import_map.py Import/Maps/BigCity --package BigCity --tiled \
   --tile-size 1000 --batch-size 200
-# no navmesh for a large map, by design — verify without --nav
+# no --nav: large maps have none (Step 4)
 python3 scripts/verify_map.py --map BigCity
 ```
 
@@ -311,9 +304,7 @@ Solution: `bash scripts/install_fbx2obj.sh` (or `export BLENDER=…` if blender
 isn't on `PATH`), then `build_navmesh.py --package <pkg> --fbx <the .fbx>`.
 
 **Large map has no `Nav/<map>.bin` and walkers won't spawn**
-Not an error — large maps have no pedestrian navmesh and cannot be given one
-(M8). Upstream ships none for Town11/12/13 either. Use a standard map if the
-scenario needs walkers; vehicles are unaffected.
+Not an error — see Step 4. Use a standard map if the scenario needs walkers.
 
 **Error: RecastBuilder runs for many minutes and writes no `.bin`**
 Cause: the map exceeds Detour's tile budget (M7) — check its header for

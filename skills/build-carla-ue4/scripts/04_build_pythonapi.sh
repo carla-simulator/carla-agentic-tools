@@ -6,7 +6,7 @@
 # prepared: a compatible interpreter active, with requirements.txt + numpy<2).
 #
 # Key correctness points encoded here:
-#   * activate_env.sh resolves the ACTIVE interpreter and exports its exact
+#   * env.sh resolves the ACTIVE interpreter and exports its exact
 #     minor as CARLA_PY_VERSION. We forward --python-version=${CARLA_PY_VERSION}
 #     to `make PythonAPI`, which passes ARGS to the `setup` target too — so
 #     boost.python (Setup.sh) and the wheel (BuildPythonAPI.sh) bind to the SAME
@@ -19,13 +19,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-
 [ -x "${UE4_ROOT}/Engine/Binaries/Linux/UE4Editor" ] \
   || { echo "[py] ERROR: UE4 not built yet (run step 03)."; exit 1; }
 
-carla_load_local_env "${CARLA_UE4_ROOT:-.}"
 carla_require_build_python || exit 1   # sets CARLA_PY_BIN + CARLA_PY_VERSION
 echo "[py] building against: ${CARLA_PY_BIN} (${CARLA_PY_VERSION})"
 

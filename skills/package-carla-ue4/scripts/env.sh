@@ -12,18 +12,34 @@
 # No environment-manager assumption is made: the wheel stage uses whatever
 # `python3` is active (references/packaging.md P1).
 
-set -euo pipefail
+# Sets no shell options on purpose: this file is sourced, and `set -e` here
+# would change its callers' error semantics. Each script sets its own.
+
+# --- Optional environment hook ----------------------------------------------
+# CARLA_ENV_ACTIVATE, when set, names an activation script to source into this
+# (possibly non-interactive) shell — the one hook for driving this skill without
+# an already-active environment. Unset, it is a silent no-op. Nothing else is
+# detected: no environment-manager binary is probed, no dotfile is searched for.
+# Roots the caller exported explicitly outrank anything that script sets.
+_KEEP_CARLA_ROOT="${CARLA_UE4_ROOT:-}" _KEEP_UE4_ROOT="${UE4_ROOT:-}"
+if [ -n "${CARLA_ENV_ACTIVATE:-}" ] && [ -f "${CARLA_ENV_ACTIVATE}" ]; then
+  # shellcheck disable=SC1090
+  source "${CARLA_ENV_ACTIVATE}"
+fi
+[ -n "${_KEEP_CARLA_ROOT}" ] && CARLA_UE4_ROOT="${_KEEP_CARLA_ROOT}"
+[ -n "${_KEEP_UE4_ROOT}" ] && UE4_ROOT="${_KEEP_UE4_ROOT}"
 
 # --- Resolve the target CARLA checkout --------------------------------------
 # Precedence: explicit CARLA_UE4_ROOT  >  $PWD if it is a checkout  >  the
 # path-derived guess (only meaningful when this repo was dropped INTO a checkout).
 _SKILL_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../.." && pwd)"
+_UPROJECT_REL="Unreal/CarlaUE4/CarlaUE4.uproject"
 
 if [ -z "${CARLA_UE4_ROOT:-}" ]; then
-  if [ -f "${PWD}/Util/BuildTools/Package.sh" ]; then
+  if [ -f "${PWD}/${_UPROJECT_REL}" ]; then
     CARLA_UE4_ROOT="${PWD}"
-  elif [ -f "${_DERIVED_ROOT}/Util/BuildTools/Package.sh" ]; then
+  elif [ -f "${_DERIVED_ROOT}/${_UPROJECT_REL}" ]; then
     CARLA_UE4_ROOT="${_DERIVED_ROOT}"
   fi
 fi
@@ -33,10 +49,51 @@ export CARLA_UE4_ROOT="${CARLA_UE4_ROOT:-}"
 # check_env.sh fail loudly with the path it looked for.
 export UE4_ROOT="${UE4_ROOT:-}"
 
-# --- Build tuning -----------------------------------------------------------
-# Parallelism for CARLA make steps. Lower it (e.g. CARLA_MAKE_JOBS=4) on
-# memory-tight machines to avoid the cook OOMing (references/packaging.md P3).
-export CARLA_MAKE_JOBS="${CARLA_MAKE_JOBS:-$(nproc)}"
+# --- Client Python ----------------------------------------------------------
+# The wheel stage runs `python3 -m build`, so `python3` must import `build`.
+# Verified up front, before the expensive editor compile.
+# Sets CARLA_PY_BIN and CARLA_PY_ARG:
+#   - no pin  -> plain `python3` (the active env); CARLA_PY_ARG stays empty so
+#     `make package` is NOT told a version and the active env wins.
+#   - pinned  -> `python<pin>`; CARLA_PY_ARG="--python-version=<pin>" is
+#     forwarded so a version-suffixed interpreter is used deliberately.
+# Non-zero with actionable, manager-agnostic guidance on failure.
+carla_require_wheel_python() {
+  local pin="${1:-}"
+  local py
+  if [ -n "${pin}" ]; then
+    py="python${pin}"
+    CARLA_PY_ARG="--python-version=${pin}"
+  else
+    py="python3"
+    CARLA_PY_ARG=""
+  fi
+  CARLA_PY_BIN="$(command -v "${py}" 2>/dev/null || true)"
+  if [ -z "${CARLA_PY_BIN}" ]; then
+    echo "[env] no '${py}' on PATH." >&2
+    echo "[env] Activate the environment holding your CARLA client python" >&2
+    echo "[env] in this shell, or set CARLA_ENV_ACTIVATE to its activate" >&2
+    echo "[env] script. Do NOT set CARLA_PY_VERSION unless you truly need a" >&2
+    echo "[env] version-suffixed interpreter (it must resolve INSIDE that env)." >&2
+    return 1
+  fi
+  if ! "${CARLA_PY_BIN}" -c 'import build' 2>/dev/null; then
+    echo "[env] ${CARLA_PY_BIN} cannot 'import build' (needed by the wheel stage)." >&2
+    echo "[env] Install it there, e.g.:  ${CARLA_PY_BIN} -m pip install build" >&2
+    return 1
+  fi
+  # Soft signal only: confirm this is likely the client env. A miss is fine —
+  # the wheel gets built and installed into this interpreter regardless.
+  if "${CARLA_PY_BIN}" -c 'import carla' 2>/dev/null; then
+    echo "[env] python: ${CARLA_PY_BIN} (has carla + build)"
+  else
+    echo "[env] python: ${CARLA_PY_BIN} (has build; carla not importable here — the wheel installs into it)"
+  fi
+  export CARLA_PY_BIN CARLA_PY_ARG
+  return 0
+}
+
+unset _KEEP_CARLA_ROOT _KEEP_UE4_ROOT _SKILL_SCRIPTS_DIR _DERIVED_ROOT _UPROJECT_REL
 
 echo "[env] CARLA_UE4_ROOT  = ${CARLA_UE4_ROOT:-<unset — export it>}"
 echo "[env] UE4_ROOT        = ${UE4_ROOT:-<unset — export it>}"

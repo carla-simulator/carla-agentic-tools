@@ -6,7 +6,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh" >/dev/null
-set +e  # env.sh enables -e; a preflight must report, not abort
 
 rc=0
 ok(){   echo "  PASS $*"; }
@@ -24,7 +23,7 @@ esac
 echo "== CARLA source =="
 if [ -z "${CARLA_UE4_ROOT}" ]; then
   bad "CARLA_UE4_ROOT is unset — export it, or run from inside a carla ue4-dev checkout"
-elif [ -f "${CARLA_UE4_ROOT}/Util/BuildTools/Setup.sh" ]; then
+elif [ -f "${CARLA_UE4_ROOT}/Unreal/CarlaUE4/CarlaUE4.uproject" ]; then
   if [ -e "${CARLA_UE4_ROOT}/.git" ]; then   # -e: .git is a FILE in a git worktree
     BR=$(git -C "${CARLA_UE4_ROOT}" branch --show-current 2>/dev/null)
     [ "${BR}" = "ue4-dev" ] && ok "carla on ue4-dev at ${CARLA_UE4_ROOT}" \
@@ -33,7 +32,7 @@ elif [ -f "${CARLA_UE4_ROOT}/Util/BuildTools/Setup.sh" ]; then
     ok "carla checkout at ${CARLA_UE4_ROOT}"
   fi
 else
-  bad "no Util/BuildTools/Setup.sh under ${CARLA_UE4_ROOT} — CARLA_UE4_ROOT is wrong"
+  bad "no Unreal/CarlaUE4/CarlaUE4.uproject under ${CARLA_UE4_ROOT} — CARLA_UE4_ROOT is wrong"
 fi
 
 echo "== Disk (need ~120GB free: UE ~80 + content ~31 + builds, L2) =="
@@ -74,12 +73,12 @@ fi
 
 echo "== Python client env (no manager assumed) =="
 # Manager-agnostic: whatever `python3` (or python<pin>) the active env provides.
-# See scripts/activate_env.sh. Missing deps are WARNs — 02_client_env.sh adds
+# See scripts/env.sh. Missing deps are WARNs — 02_client_env.sh adds
 # them; boost.python builds on 3.10-3.12 (L5's ">3.10 breaks" caveat is stale).
 PY="${CARLA_PY_VERSION:+python${CARLA_PY_VERSION}}"; PY="${PY:-python3}"
 PY_BIN="$(command -v "${PY}" 2>/dev/null || true)"
 if [ -z "${PY_BIN}" ]; then
-  warn "no '${PY}' on PATH — activate a CARLA client env before step 02 (venv/conda/system)"
+  warn "no '${PY}' on PATH — activate a CARLA client env before step 02"
 else
   PY_VER="$("${PY_BIN}" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null)"
   ok "python: ${PY_BIN} (${PY_VER:-?})"

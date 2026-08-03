@@ -5,7 +5,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh" >/dev/null
-set +e  # env.sh enables -e; a preflight must report, not abort
 
 rc=0
 ok(){   echo "  PASS $*"; }

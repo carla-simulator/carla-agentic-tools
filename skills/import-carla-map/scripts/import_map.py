@@ -293,7 +293,7 @@ def verify_artifacts(carla_root: Path, package: str, map_name: str, need_nav: bo
         if info.is_file():
             print(f"PASS  TilesInfo.txt: {info.relative_to(carla_root)}")
         else:
-            print(f"FAIL  no TilesInfo.txt — the streaming setup was not written")
+            print("FAIL  no TilesInfo.txt — the streaming setup was not written")
             ok = False
 
     nav_path = base / "Nav" / f"{map_name}.bin"

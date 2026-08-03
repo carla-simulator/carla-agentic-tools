@@ -33,8 +33,8 @@ here as the build proceeds; durable ones also live in the step scripts/SKILL.md.
 ### L5 — Anaconda `base` poisons the build toolchain
 - **Symptom:** `python3`→anaconda 3.13, `ninja`/`cmake` also from conda.
 - **Cause:** anaconda base on PATH; python 3.13 too new for CARLA's boost.python.
-- **Fix:** build the client in a dedicated env with a compatible interpreter — **3.10-3.12 all build on this HEAD** (boost 1.90; the original ">3.10 breaks" note was pre-upgrade); 3.13/anaconda-`base` remain too new. Any manager (venv, conda, pyenv); don't rely on system/anaconda `base`. The skill is manager-agnostic: activate the env, then `scripts/02_client_env.sh` installs deps into it and `scripts/activate_env.sh` derives its exact minor.
-- **Encoded:** `scripts/activate_env.sh` (interpreter resolution), `scripts/02_client_env.sh` (deps).
+- **Fix:** build the client in a dedicated env with a compatible interpreter — **3.10-3.12 all build on this HEAD** (boost 1.90; the original ">3.10 breaks" note was pre-upgrade); 3.13/anaconda-`base` remain too new. Any manager (venv, conda, pyenv); don't rely on system/anaconda `base`. The skill is manager-agnostic: activate the env, then `scripts/02_client_env.sh` installs deps into it and `scripts/env.sh` derives its exact minor.
+- **Encoded:** `scripts/env.sh` (interpreter resolution), `scripts/02_client_env.sh` (deps).
 
 ### L6 — numpy must be < 2.0
 - **Cause:** bindings compiled against numpy 1.x C-API; import crashes under 2.x.
@@ -70,7 +70,7 @@ here as the build proceeds; durable ones also live in the step scripts/SKILL.md.
 ### L12 — `conda activate` ≠ the conda binary being on PATH (historical)
 - **Symptom:** `CondaError: Run 'conda init' before 'conda activate'` in a script, even though `which conda` works.
 - **Cause:** `conda activate` is a *shell function* defined by `etc/profile.d/conda.sh`; a non-interactive shell never sourced it. The binary alone can't activate.
-- **Superseded:** the skill no longer runs `conda activate`. `scripts/activate_env.sh` resolves whatever interpreter the caller's ACTIVE env already provides (manager-agnostic), so this class of failure is designed out. Kept as history for anyone driving conda by hand: source `"$(conda info --base)/etc/profile.d/conda.sh"` before `conda activate`, or use `conda run -n <env> …`.
+- **Superseded:** the skill no longer runs `conda activate`. `scripts/env.sh` resolves whatever interpreter the caller's ACTIVE env already provides (manager-agnostic), so this class of failure is designed out. Kept as history for anyone driving conda by hand: source `"$(conda info --base)/etc/profile.d/conda.sh"` before `conda activate`, or use `conda run -n <env> …`.
 
 ### L13 — A background wrapper's exit code can mask the real failure
 - **Symptom:** task notification said "exit code 0" while the build actually died at conda activate.
@@ -88,7 +88,7 @@ here as the build proceeds; durable ones also live in the step scripts/SKILL.md.
 - **Symptom:** after the long editor compile, `make package` died: `/usr/bin/python3.10: No module named build.__main__`, `make: *** [PythonAPI.wheel] Error 1`. No `Dist/` produced.
 - **Cause:** the `package` target's `PythonAPI.wheel` prerequisite runs `python${CARLA_PY_VERSION} -m build`. With the client env not active, that resolved to **system** python (which lacks the `build` module). Step 04 worked because it resolved the active interpreter; step 06 originally didn't.
 - **Fix:** activate `${CARLA_CONDA_ENV}` in step 06 too (any step that triggers the wheel build must). The editor compile is cached, so re-running only redoes the wheel + cook → `Dist/`.
-- **Encoded:** `scripts/06_build_editor.sh` now sources `activate_env.sh` and resolves the active client interpreter, exactly like step 04.
+- **Encoded:** `scripts/06_build_editor.sh` now sources `env.sh` and resolves the active client interpreter, exactly like step 04.
 
 ### L13 (reconfirmed) — the masked exit code bit us again here
 - `make package` failed with `Error 1`, the wrapper appended `package rc=2`, yet the task notification still reported "exit code 0". Ground-truth verification (grep the logged `rc=`, check for `Dist/`) is what caught it. **Never trust the harness exit summary for backgrounded build chains.**

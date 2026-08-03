@@ -12,13 +12,25 @@
 # Unlike prop import, a MAP import needs a carla-capable python:
 # Util/BuildTools/Import.py does `import carla` at module scope and calls
 # carla.Map(...).cook_in_memory_map(...) to build the Traffic Manager binary.
-# So the client wheel is a HARD requirement here (see activate_env.sh /
-# check_env.sh), not an optional verify-only extra.
+# So the client wheel is a HARD requirement here (see check_env.sh), not an
+# optional verify-only extra.
 
-# NOTE: this file deliberately sets no shell options. It is sourced by other
-# scripts, and `set -e` here would silently change THEIR error semantics (a
-# plain `[ -n "$x" ] && ...` test would abort the caller). Each script that does
-# work sets its own `set -euo pipefail`; check_env.sh sets -uo on purpose.
+# Sets no shell options on purpose: this file is sourced, and `set -e` here
+# would change its callers' error semantics. Each script sets its own.
+
+# --- Optional environment hook ----------------------------------------------
+# CARLA_ENV_ACTIVATE, when set, names an activation script to source into this
+# (possibly non-interactive) shell — the one hook for driving this skill without
+# an already-active environment. Unset, it is a silent no-op. Nothing else is
+# detected: no environment-manager binary is probed, no dotfile is searched for.
+# Roots the caller exported explicitly outrank anything that script sets.
+_KEEP_CARLA_ROOT="${CARLA_UE4_ROOT:-}" _KEEP_UE4_ROOT="${UE4_ROOT:-}"
+if [ -n "${CARLA_ENV_ACTIVATE:-}" ] && [ -f "${CARLA_ENV_ACTIVATE}" ]; then
+  # shellcheck disable=SC1090
+  source "${CARLA_ENV_ACTIVATE}"
+fi
+[ -n "${_KEEP_CARLA_ROOT}" ] && CARLA_UE4_ROOT="${_KEEP_CARLA_ROOT}"
+[ -n "${_KEEP_UE4_ROOT}" ] && UE4_ROOT="${_KEEP_UE4_ROOT}"
 
 # --- Resolve the target CARLA checkout --------------------------------------
 # Precedence: explicit CARLA_UE4_ROOT  >  $PWD if it is a checkout  >  the
@@ -46,13 +58,7 @@ export UE4_ROOT="${UE4_ROOT:-}"
 # active env, and that interpreter is the one that must import `carla`.
 export CARLA_PY_VERSION="${CARLA_PY_VERSION:-}"
 
-# --- Where maps land ---------------------------------------------------------
-# The map's own directory is an argument to import_map.py, not an env var: it is
-# read in place, from wherever it is.
-
-# Content is commonly a symlink to one clone shared by every worktree; the
-# imported map lands under Content/<package>/, which every checkout then sees.
-export CARLA_CONTENT_DIR="${CARLA_UE4_ROOT:+${CARLA_UE4_ROOT}/Unreal/CarlaUE4/Content}"
+unset _KEEP_CARLA_ROOT _KEEP_UE4_ROOT _SKILL_SCRIPTS_DIR _DERIVED_ROOT _UPROJECT_REL
 
 echo "[env] CARLA_UE4_ROOT  = ${CARLA_UE4_ROOT:-<unset — export it>}"
 echo "[env] UE4_ROOT        = ${UE4_ROOT:-<unset — export it>}"

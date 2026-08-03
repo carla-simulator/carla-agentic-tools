@@ -12,18 +12,34 @@
 # No environment-manager assumption is made: the verify client uses whatever
 # `python3` your active CARLA client env provides.
 
-set -euo pipefail
+# Sets no shell options on purpose: this file is sourced, and `set -e` here
+# would change its callers' error semantics. Each script sets its own.
+
+# --- Optional environment hook ----------------------------------------------
+# CARLA_ENV_ACTIVATE, when set, names an activation script to source into this
+# (possibly non-interactive) shell — the one hook for driving this skill without
+# an already-active environment. Unset, it is a silent no-op. Nothing else is
+# detected: no environment-manager binary is probed, no dotfile is searched for.
+# Roots the caller exported explicitly outrank anything that script sets.
+_KEEP_CARLA_ROOT="${CARLA_UE4_ROOT:-}" _KEEP_UE4_ROOT="${UE4_ROOT:-}"
+if [ -n "${CARLA_ENV_ACTIVATE:-}" ] && [ -f "${CARLA_ENV_ACTIVATE}" ]; then
+  # shellcheck disable=SC1090
+  source "${CARLA_ENV_ACTIVATE}"
+fi
+[ -n "${_KEEP_CARLA_ROOT}" ] && CARLA_UE4_ROOT="${_KEEP_CARLA_ROOT}"
+[ -n "${_KEEP_UE4_ROOT}" ] && UE4_ROOT="${_KEEP_UE4_ROOT}"
 
 # --- Resolve the target CARLA checkout --------------------------------------
 # Precedence: explicit CARLA_UE4_ROOT  >  $PWD if it is a checkout  >  the
 # path-derived guess (only meaningful when this repo was dropped INTO a checkout).
 _SKILL_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../.." && pwd)"
+_UPROJECT_REL="Unreal/CarlaUE4/CarlaUE4.uproject"
 
 if [ -z "${CARLA_UE4_ROOT:-}" ]; then
-  if [ -f "${PWD}/Util/BuildTools/Setup.sh" ]; then
+  if [ -f "${PWD}/${_UPROJECT_REL}" ]; then
     CARLA_UE4_ROOT="${PWD}"
-  elif [ -f "${_DERIVED_ROOT}/Util/BuildTools/Setup.sh" ]; then
+  elif [ -f "${_DERIVED_ROOT}/${_UPROJECT_REL}" ]; then
     CARLA_UE4_ROOT="${_DERIVED_ROOT}"
   fi
 fi
@@ -33,6 +49,8 @@ export CARLA_UE4_ROOT="${CARLA_UE4_ROOT:-}"
 # check_env.sh fail loudly with the path it looked for. Only the uncooked modes
 # (default / WINDOW=1) need it; PACKAGED=1 runs from Dist/ without it.
 export UE4_ROOT="${UE4_ROOT:-}"
+
+unset _KEEP_CARLA_ROOT _KEEP_UE4_ROOT _SKILL_SCRIPTS_DIR _DERIVED_ROOT _UPROJECT_REL
 
 echo "[env] CARLA_UE4_ROOT  = ${CARLA_UE4_ROOT:-<unset — export it>}"
 echo "[env] UE4_ROOT        = ${UE4_ROOT:-<unset — needed for uncooked modes>}"

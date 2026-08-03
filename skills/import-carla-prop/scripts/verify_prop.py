@@ -41,7 +41,7 @@ try:
 except ImportError:
     sys.exit(
         "ERROR: cannot 'import carla'.\n"
-        "       Activate the environment holding the CARLA wheel (venv/conda/system)."
+        "       Activate the environment holding the CARLA wheel."
     )
 
 # Props are spawned this far above a road spawn point: high enough that the road

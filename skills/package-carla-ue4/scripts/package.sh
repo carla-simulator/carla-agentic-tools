@@ -25,10 +25,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # the wheel stage then uses plain `python3` from whatever environment is active,
 # and no version is forwarded to `make`.
 _PYV_PIN="${CARLA_PY_VERSION:-}"
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-# Best-effort project-local env (direnv / CARLA_ENV_ACTIVATE). Both optional.
-carla_load_local_env "${HERE}"
+# Optional CARLA_ENV_ACTIVATE hook; a no-op when unset.
 
 # Self-contained env for this skill — provides UE4_ROOT / CARLA_UE4_ROOT and
 # makes no environment-manager assumption. Keep CARLA_PY_VERSION empty unless
@@ -103,7 +100,7 @@ ARGS=("--packages=${PACKAGES}" "--config=${PACKAGE_CONFIG}")
 # after the editor compile and before the cook, so a miss costs the compile
 # (references/packaging.md P1). Verify it now and, ONLY when pinned, forward the
 # version to `make` — otherwise the active env's `python3` is used as-is.
-carla_require_build_python "${_PYV_PIN}" || exit 1
+carla_require_wheel_python "${_PYV_PIN}" || exit 1
 [ -n "${CARLA_PY_ARG}" ] && ARGS+=("${CARLA_PY_ARG}")
 
 # Mirrors get_git_repository_version (Util/BuildTools/Environment.sh) so artifact

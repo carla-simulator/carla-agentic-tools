@@ -7,17 +7,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Capture an EXPLICIT caller pin; env.sh sets no CARLA_PY_VERSION default, so the
 # active `python3` is what we check unless the caller pinned one.
 _PYV_PIN="${CARLA_PY_VERSION:-}"
-# Pick up the same project-local env the verify step will use (direnv .envrc,
-# CARLA_ENV_ACTIVATE). The .envrc lives in the CARLA checkout, not here, so try
-# $PWD first (the checkout when the agent runs from inside it), then again from
-# the resolved root.
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-carla_load_local_env "${PWD}"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh" >/dev/null
-# `|| true`: env.sh sets -e, and a false test would otherwise abort the checks.
-[ -n "${CARLA_UE4_ROOT:-}" ] && carla_load_local_env "${CARLA_UE4_ROOT}" || true
 CARLA_PY_VERSION="${_PYV_PIN}"
 
 FAIL=0

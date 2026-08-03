@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Step 02 — prepare the CARLA Python client env. Manager-agnostic: this does NOT
-# create an env. Activate one first (venv, conda, or system — see SKILL.md for
-# one-liners), then this installs the client build deps into it.
+# create an env. Activate one first (see SKILL.md), then this installs the client
+# build deps into it.
 #
 # Why an env with a compatible interpreter matters: system python on recent
 # distros may be too new for CARLA's boost.python bindings (3.10-3.12 build;
@@ -13,18 +13,14 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-
-carla_load_local_env "${CARLA_UE4_ROOT:-.}"
 carla_require_build_python || exit 1   # sets CARLA_PY_BIN + CARLA_PY_VERSION
 
 REQ="${CARLA_UE4_ROOT}/PythonAPI/carla/requirements.txt"
 [ -f "${REQ}" ] || { echo "[client-env] ERROR: ${REQ} not found — is CARLA_UE4_ROOT a carla checkout?"; exit 1; }
 
 # numpy<2: CARLA's bindings are compiled against the numpy 1.x C-API and crash on
-# import under 2.x (L6). Install into the ACTIVE interpreter, whatever manager
-# provides it — no `conda`/`venv` command is assumed.
+# import under 2.x (L6). Installed into the ACTIVE interpreter, whatever provided
+# it — no environment-manager command is invoked.
 echo "[client-env] installing client build deps + numpy<2 into ${CARLA_PY_BIN} (${CARLA_PY_VERSION})..."
 "${CARLA_PY_BIN}" -m pip install --upgrade -r "${REQ}" "numpy<2.0.0"
 

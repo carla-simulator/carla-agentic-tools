@@ -36,8 +36,8 @@ The wheel stage runs `python3 -m build`, so **have your CARLA client
 environment active first** — the one whose `python3` imports `build` and
 `carla`. Any manager works (venv, conda, system); the skill assumes none and
 pins no version. If you drive this non-interactively, either activate the env
-in the same shell, or point `CARLA_ENV_ACTIVATE` at its activate script (direnv
-`.envrc` is also picked up when present). Only set `CARLA_PY_VERSION` if you
+in the same shell, or point `CARLA_ENV_ACTIVATE` at its activate script — the
+only hook the skill looks at. Only set `CARLA_PY_VERSION` if you
 deliberately need a version-suffixed interpreter — and it must resolve *inside*
 that env, or the wheel escapes to the wrong Python.
 
@@ -117,7 +117,7 @@ nothing.
 
 ```bash
 # release: boot the packaged server, then load a town from a client
-PACKAGED=1 bash ../run-carla-server/run_server.sh >/tmp/carla_pkg.log 2>&1 &
+PACKAGED=1 bash ../run-carla-server/scripts/run_server.sh >/tmp/carla_pkg.log 2>&1 &
 until nc -z 127.0.0.1 2000; do sleep 1; done
 python -c "import carla; c=carla.Client('127.0.0.1',2000); c.set_timeout(60); \
            print('loaded', c.load_world('Town15').get_map().name)"
@@ -202,7 +202,8 @@ Solution: build the carla content first, then re-package.
 
 **Error: killed mid-cook, or the machine freezes**
 Cause: OOM — the cook parallelises and each worker is memory-hungry.
-Solution: `CARLA_MAKE_JOBS=4 bash scripts/package.sh`.
+Solution: free RAM or add swap; there is no parallelism knob (packaging.md P3).
+Re-running is cheap — the cook is iterative, so cooked assets are reused.
 
 ## Outputs
 

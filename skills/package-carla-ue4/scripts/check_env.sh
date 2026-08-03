@@ -31,10 +31,10 @@ fi
 
 if [ -z "${CARLA_UE4_ROOT}" ]; then
   fail "CARLA_UE4_ROOT is unset — export it, or run from inside a carla checkout"
-elif [ -f "${CARLA_UE4_ROOT}/Util/BuildTools/Package.sh" ]; then
+elif [ -f "${CARLA_UE4_ROOT}/Unreal/CarlaUE4/CarlaUE4.uproject" ]; then
   pass "carla checkout at ${CARLA_UE4_ROOT}"
 else
-  fail "no Util/BuildTools/Package.sh under ${CARLA_UE4_ROOT} — CARLA_UE4_ROOT is wrong"
+  fail "no Unreal/CarlaUE4/CarlaUE4.uproject under ${CARLA_UE4_ROOT} — CARLA_UE4_ROOT is wrong"
 fi
 
 # --- Content: not a blocker, but packaging without it wastes the whole run ---
@@ -45,9 +45,9 @@ else
 fi
 
 # --- Active python: the wheel stage runs `python3 -m build` -----------------
-# Manager-agnostic: whatever env is active (venv/conda/system) must provide a
-# `python3` that imports `build`. No conda assumption. A pinned CARLA_PY_VERSION
-# means a version-suffixed interpreter is used instead, so check that one.
+# Manager-agnostic: whatever env is active must provide a `python3` that imports
+# `build`. A pinned CARLA_PY_VERSION means a version-suffixed interpreter is used
+# instead, so check that one.
 if [ -n "${CARLA_PY_VERSION:-}" ]; then PYBIN="python${CARLA_PY_VERSION}"; else PYBIN="python3"; fi
 PYPATH="$(command -v "${PYBIN}" 2>/dev/null || true)"
 if [ -z "${PYPATH}" ]; then
@@ -85,13 +85,11 @@ fi
 
 # --- Dist/ checks: only when it exists (absent before the first package) -----
 if [ -d "${CARLA_UE4_ROOT}/Dist" ]; then
-  # Stale .tar would be appended to by tar -rf.
   STALE="$(find "${CARLA_UE4_ROOT}/Dist" -maxdepth 1 -name '*.tar' 2>/dev/null || true)"
   if [ -n "${STALE}" ]; then
     warn "stale uncompressed .tar in Dist/ — tar -rf APPENDS to these; remove before re-running:"
     printf '%s\n' "${STALE}" | sed 's/^/        /'
   fi
-  # Existing artifacts will be superseded.
   if compgen -G "${CARLA_UE4_ROOT}/Dist/*.tar.gz" >/dev/null; then
     warn "Dist/ already holds packages:"
     ls -lah "${CARLA_UE4_ROOT}"/Dist/*.tar.gz | sed 's/^/        /'

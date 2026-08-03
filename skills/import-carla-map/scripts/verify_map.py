@@ -98,7 +98,7 @@ def main():
                 finally:
                     walker.destroy()
             else:
-                print(f"WARN  navmesh returned a point but the walker did not spawn there")
+                print("WARN  navmesh returned a point but the walker did not spawn there")
         else:
             print("FAIL  no navigable location — Nav/<map>.bin missing or empty "
                   "(install_fbx2obj.sh, then build_navmesh.py --package <pkg>)")
