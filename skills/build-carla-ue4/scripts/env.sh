@@ -49,6 +49,32 @@ export CARLA_UE4_ROOT="${CARLA_UE4_ROOT:-}"
 # check_env.sh fail loudly with the path it looked for.
 export UE4_ROOT="${UE4_ROOT:-}"
 
+# --- ROS 2 native interface (opt-in) ----------------------------------------
+# ROS2=1 builds the server WITH CARLA's native ROS 2 publisher stack: `--ros2`
+# is appended to the make ARGS, which reaches Setup.sh (builds Fast-DDS,
+# CycloneDDS and Zenoh from source into Build/), BuildLibCarla.sh (compiles
+# carla_ros2) and BuildCarlaUE4.sh (writes `Ros2 ON` into
+# Unreal/CarlaUE4/Config/OptionalModules.ini, which Carla.Build.cs reads to
+# define WITH_ROS2 and link carla_ros2).
+#
+# There is NO runtime toggle: a server built without this cannot enable ROS 2,
+# and a server built with it still needs the `--ros2` RUNTIME flag
+# ([[run-carla-server]]). Details in references/ros2.md.
+export ROS2="${ROS2:-0}"
+CARLA_ROS2_ARG=""
+[ "${ROS2}" = "1" ] && CARLA_ROS2_ARG="--ros2"
+export CARLA_ROS2_ARG
+
+# Current build-time ROS 2 state of the checkout, read from the file that
+# actually decides it. BuildCarlaUE4.sh writes every module flag onto ONE
+# space-separated line ("Fast_dds ON Unity ON Ros2 OFF ..."), so match the
+# token pair anywhere, not at line start. Echoes: on | off | absent.
+carla_ros2_ini_state() {
+  local ini="${CARLA_UE4_ROOT}/Unreal/CarlaUE4/Config/OptionalModules.ini"
+  [ -f "${ini}" ] || { echo absent; return 0; }
+  grep -q 'Ros2 ON' "${ini}" && echo on || echo off
+}
+
 # --- Optional Python pin ----------------------------------------------------
 # CARLA's boost.python bindings and the wheel must bind to ONE interpreter
 # (references/lessons.md L7), derived below from the ACTIVE env.
@@ -110,3 +136,4 @@ unset _KEEP_CARLA_ROOT _KEEP_UE4_ROOT _SKILL_SCRIPTS_DIR _DERIVED_ROOT _UPROJECT
 
 echo "[env] CARLA_UE4_ROOT  = ${CARLA_UE4_ROOT:-<unset — export it>}"
 echo "[env] UE4_ROOT        = ${UE4_ROOT:-<unset — export it>}"
+echo "[env] ROS2            = ${ROS2} (checkout is currently built with Ros2 $(carla_ros2_ini_state))"

@@ -9,6 +9,9 @@ Commands:
     save   --out DIR [--seconds 10] [--frames N]   write frames to DIR
     show   [--seconds 20]                   live window (cameras + lidar)
     grid   --ids 12,13,14 [--seconds 20]    tile several sensors in one window
+    ros-info                                the ROS 2 topics this sensor
+                                            publishes, their QoS, and whether it
+                                            is actually enabled for ROS
 
 save writes cameras as PNG (depth→logarithmic, semantic→CityScapes palette),
 lidar as .ply, and other sensors (imu/gnss/radar/…) as rows in data.jsonl.
@@ -293,6 +296,88 @@ def cmd_grid(args):
     print(f"closed grid of {len(sensors)} sensors")
 
 
+# --- ROS 2 ------------------------------------------------------------------
+# Mirrors LibCarla/source/carla/ros2: the base topic is "rt/carla/<ros_name>",
+# nested under the parent's when attached, and each publisher appends its suffix.
+# Sensors absent from ROS2::GetOrCreateSensor's switch have no publisher at all.
+_CAMERA_TOPICS = (("/image", "sensor_msgs/Image"),
+                  ("/camera_info", "sensor_msgs/CameraInfo"))
+_CLOUD_TOPICS = (("/point_cloud", "sensor_msgs/PointCloud2"),)
+_ROS_UNSUPPORTED = ("other.lane_invasion", "other.obstacle", "other.rss")
+
+
+def _ros_topics_for(type_id: str, base: str):
+    short = type_id[len("sensor."):] if type_id.startswith("sensor.") else type_id
+    if short in _ROS_UNSUPPORTED or "gbuffer" in short:
+        return []
+    if short == "camera.dvs":
+        return [(base + s, m) for s, m in _CAMERA_TOPICS + _CLOUD_TOPICS]
+    if short.startswith("camera."):
+        return [(base + s, m) for s, m in _CAMERA_TOPICS]
+    if short.startswith("lidar.") or short == "other.radar":
+        return [(base + s, m) for s, m in _CLOUD_TOPICS]
+    if short == "other.imu":
+        return [(base, "sensor_msgs/Imu")]
+    if short == "other.gnss":
+        return [(base, "sensor_msgs/NavSatFix")]
+    if short == "other.collision":
+        return [(base, "carla_msgs/CarlaCollisionEvent")]
+    return []
+
+
+def cmd_ros_info(args):
+    """What this sensor publishes natively, and whether it is publishing at all.
+
+    Read-only, and answerable without ROS 2 installed: the names are derived from
+    the actor's own attributes, exactly as the server derives them.
+    """
+    world = _client().get_world()
+    sensor = _resolve(world, args)
+    ros_name = sensor.attributes.get("ros_name", "") or f"actor{sensor.id}"
+    frame_id = sensor.attributes.get("ros_frame_id", "") or ros_name
+    publish_tf = sensor.attributes.get("ros_publish_tf", "true").lower() != "false"
+
+    base = f"rt/carla/{ros_name}"
+    parent = sensor.parent
+    if parent is not None:
+        parent_ros = parent.attributes.get("ros_name", "") or f"actor{parent.id}"
+        base = f"rt/carla/{parent_ros}/{ros_name}"
+
+    print(f"sensor id={sensor.id} ({sensor.type_id})")
+    print(f"  ros_name={ros_name!r} frame_id={frame_id!r} "
+          f"parent_frame={'map' if parent is None else (parent.attributes.get('ros_frame_id') or parent.attributes.get('ros_name') or f'actor{parent.id}')}")
+    topics = _ros_topics_for(sensor.type_id, base)
+    if not topics:
+        print(f"  NO native publisher for {sensor.type_id} — it never appears on ROS")
+    for t, m in topics:
+        # Image/point-cloud publishers use the sensor-data profile (best effort);
+        # everything else keeps the reliable default. Depth 1 in both cases.
+        #
+        # Durability is NOT volatile in practice: the middleware only ever RAISES
+        # it, and Fast DDS's default writer QoS is already TRANSIENT_LOCAL, so
+        # every topic reports transient_local there (verified against a live
+        # server). Other RMWs may differ, hence the hedge in the label.
+        qos = "best_effort" if t.endswith(("/image", "/camera_info", "/point_cloud")) else "reliable"
+        print(f"  {t}  [{m}]  qos={qos}, depth=1, durability=transient_local on fastdds"
+              f"   (ROS node sees /{t[3:]})")
+    print(f"  rt/tf: {'yes' if publish_tf else 'no (ros_publish_tf=false)'}")
+
+    # is_listening covers Python listeners only; enable_for_ros is a separate
+    # server-side flag, and it is the one that makes a sensor tick for ROS.
+    try:
+        enabled = sensor.is_enabled_for_ros()
+    except AttributeError:      # older client without the binding
+        enabled = None
+    if enabled is False:
+        print("  enabled_for_ros=NO — this sensor is NOT publishing. Fix with:")
+        print(f"    python3 -c \"import carla;a=carla.Client('127.0.0.1',2000)."
+              f"get_world().get_actors().find({sensor.id});a.enable_for_ros()\"")
+    elif enabled is True:
+        print("  enabled_for_ros=yes")
+    else:
+        print("  enabled_for_ros=? (client too old for is_enabled_for_ros)")
+
+
 def _sel(sp):
     sp.add_argument("--id", type=int); sp.add_argument("--type"); sp.add_argument("--attached-to")
     return sp
@@ -320,6 +405,9 @@ def main() -> None:
     pgr.add_argument("--ids", required=True, help="comma-separated sensor ids, e.g. 12,13,14")
     pgr.add_argument("--seconds", type=float, default=20.0, help="0 = until window closed")
     pgr.set_defaults(func=cmd_grid)
+
+    _sel(sub.add_parser("ros-info", help="ROS 2 topics + QoS for this sensor")) \
+        .set_defaults(func=cmd_ros_info)
 
     args = p.parse_args()
     args.func(args)

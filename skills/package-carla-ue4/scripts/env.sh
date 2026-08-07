@@ -93,7 +93,28 @@ carla_require_wheel_python() {
   return 0
 }
 
+# --- ROS 2 native interface (opt-in) ----------------------------------------
+# ROS2=1 cooks a package WITH CARLA's native ROS 2 interface. `Package.sh` has
+# no ROS 2 option of its own: support is inherited from the editor build, and
+# `make package` DEPENDS on CarlaUE4Editor, so it re-runs BuildCarlaUE4.sh and
+# rewrites Config/OptionalModules.ini. Without --ros2 in ARGS that rewrite says
+# `Ros2 OFF` and the cooked package silently has no ROS 2 (references/ros2.md).
+export ROS2="${ROS2:-0}"
+CARLA_ROS2_ARG=""
+[ "${ROS2}" = "1" ] && CARLA_ROS2_ARG="--ros2"
+export CARLA_ROS2_ARG
+
+# Build-time ROS 2 state of the checkout. BuildCarlaUE4.sh writes every module
+# flag onto ONE space-separated line, so match the token pair anywhere.
+# Echoes: on | off | absent.
+carla_ros2_ini_state() {
+  local ini="${CARLA_UE4_ROOT}/Unreal/CarlaUE4/Config/OptionalModules.ini"
+  [ -f "${ini}" ] || { echo absent; return 0; }
+  grep -q 'Ros2 ON' "${ini}" && echo on || echo off
+}
+
 unset _KEEP_CARLA_ROOT _KEEP_UE4_ROOT _SKILL_SCRIPTS_DIR _DERIVED_ROOT _UPROJECT_REL
 
 echo "[env] CARLA_UE4_ROOT  = ${CARLA_UE4_ROOT:-<unset — export it>}"
 echo "[env] UE4_ROOT        = ${UE4_ROOT:-<unset — export it>}"
+echo "[env] ROS2            = ${ROS2} (checkout currently built with Ros2 $(carla_ros2_ini_state))"

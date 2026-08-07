@@ -71,6 +71,30 @@ else
   warn "Content missing (step 05)"
 fi
 
+echo "== ROS 2 native interface (ROS2=${ROS2}) =="
+# Build-time state only: this reports what the checkout is configured/built for.
+# Runtime enabling is a separate flag ([[run-carla-server]] ROS2=1).
+INI_STATE="$(carla_ros2_ini_state)"
+case "${INI_STATE}" in
+  absent) warn "Config/OptionalModules.ini not written yet (step 06 creates it)";;
+  on)     ok   "checkout configured with Ros2 ON";;
+  off)    if [ "${ROS2}" = "1" ]; then
+            warn "checkout has Ros2 OFF — step 06 with ROS2=1 rebuilds it ON"
+          else
+            ok "checkout configured with Ros2 OFF"
+          fi;;
+esac
+if [ "${ROS2}" = "1" ]; then
+  # Setup.sh --ros2 builds these from source; presence means the long dependency
+  # stage is already done. Names come from Setup.sh's *_INSTALL_DIR variables.
+  for d in fast-dds-install cyclone-dds-install zenoh-install; do
+    [ -d "${CARLA_UE4_ROOT}/Build/${d}" ] && ok "middleware dep built: Build/${d}" \
+      || warn "Build/${d} missing — step 06 (ARGS=--ros2) builds it from source (long)"
+  done
+  # These are cloned from GitHub during the dependency build.
+  command -v git >/dev/null && ok "git present (middleware sources are cloned)" || bad "git missing"
+fi
+
 echo "== Python client env (no manager assumed) =="
 # Manager-agnostic: whatever `python3` (or python<pin>) the active env provides.
 # See scripts/env.sh. Missing deps are WARNs — 02_client_env.sh adds

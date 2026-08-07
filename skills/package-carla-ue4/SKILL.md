@@ -1,6 +1,6 @@
 ---
 name: package-carla-ue4
-description: Cooks and packages CarlaUE4 into distributable tarballs under Dist/ — either the full simulator or a standalone asset package of selected maps and props for later import. Use when the user asks to "package CARLA", "make a Dist build", "cook the project", "export a map as a package", or needs a build with working camera and lidar sensors.
+description: Cooks and packages CarlaUE4 into distributable tarballs under Dist/ — either the full simulator or a standalone asset package of selected maps and props for later import. ROS2=1 keeps the native ROS 2 interface in the cooked package (a plain cook silently drops it). Use when the user asks to "package CARLA", "make a Dist build", "cook the project", "export a map as a package", "package CARLA with ROS2", or needs a build with working camera and lidar sensors.
 license: MIT
 compatibility: Linux. Requires a built CarlaUnreal UE 4.26 checkout (UE4_ROOT), a carla ue4-dev source checkout, an active Python env whose `python3` imports `build` + `carla` (venv, conda or system — no manager assumed), and ~30 GB free disk. A full release takes 30-90 minutes.
 metadata:
@@ -109,6 +109,32 @@ PACKAGE_DEST=~/dev/Carla/packages bash scripts/package.sh
 PACKAGE_DEST=~/dev/Carla/packages PACKAGE_DEST_MODE=copy bash scripts/package.sh
 ```
 
+### ROS 2 packages (`ROS2=1`)
+
+```bash
+ROS2=1 bash scripts/package.sh          # release WITH the native ROS 2 interface
+```
+
+`Package.sh` has **no** ROS 2 option — support is inherited from the editor
+build. But `make package` **depends on** `CarlaUE4Editor`, so every cook re-runs
+`BuildCarlaUE4.sh`, which rewrites `Unreal/CarlaUE4/Config/OptionalModules.ini`.
+Cook without `ROS2=1` and that rewrite says `Ros2 OFF`: the package loses ROS 2
+even though the checkout was built with it, with nothing in the log to say so.
+Hence:
+
+- `ROS2=1` appends `--ros2` to the forwarded `ARGS` (`Package.sh` and
+  `BuildPythonAPI.sh` print a harmless `unrecognized option '--ros2'`; only
+  `Setup.sh`/`BuildLibCarla.sh`/`BuildCarlaUE4.sh` act on it).
+- Cooking **without** `ROS2=1` from a ROS-2-built checkout warns and pauses 5 s.
+- After the cook, `package.sh` re-reads the ini and **fails** if `ROS2=1` did not
+  end up as `Ros2 ON` — the staged binaries would have no ROS 2.
+- If the middleware deps (`Build/{fast-dds,cyclone-dds,zenoh}-install`) are not
+  built yet, this cook builds them first — add that to the 30-90 min.
+
+Serve the result with [[run-carla-server]] `PACKAGED=1 ROS2=1` (the runtime
+`--ros2` flag is separate); build-time detail in
+[[build-carla-ue4]] `references/ros2.md`.
+
 ### Optional: run the packaged build
 
 Only when the request asks to run or load the result (e.g. "package the engine
@@ -121,7 +147,7 @@ PACKAGED=1 bash ../run-carla-server/scripts/run_server.sh >/tmp/carla_pkg.log 2>
 until nc -z 127.0.0.1 2000; do sleep 1; done
 python -c "import carla; c=carla.Client('127.0.0.1',2000); c.set_timeout(60); \
            print('loaded', c.load_world('Town15').get_map().name)"
-pkill -x CarlaUE4-Linux-Shipping
+pkill -x CarlaUE4-Linux-        # NOT ...-Shipping: comm is truncated to 15 chars
 
 # asset package: install into an extracted release first, from its ROOT
 cp Dist/OneTown_TAG.tar.gz RELEASE/Import/

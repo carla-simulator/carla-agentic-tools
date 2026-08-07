@@ -50,7 +50,48 @@ export CARLA_UE4_ROOT="${CARLA_UE4_ROOT:-}"
 # (default / WINDOW=1) need it; PACKAGED=1 runs from Dist/ without it.
 export UE4_ROOT="${UE4_ROOT:-}"
 
+# --- ROS 2 native interface (opt-in, runtime) -------------------------------
+# ROS2=1 starts the server with `--ros2`, so it publishes DDS topics itself (no
+# carla-ros-bridge). This only WORKS on a binary that was BUILT with ROS 2
+# ([[build-carla-ue4]] / [[package-carla-ue4]] ROS2=1) — a plain binary accepts
+# the flag and ignores it, with no error.
+#
+#   RMW             fastdds (server default) | cyclonedds | zenoh -> --rmw=
+#                   zenoh additionally needs a router process (references/ros2.md)
+#   ROS_DOMAIN_ID   0..232 -> --ros-domain-id=; unset lets the server resolve it
+#                   from the ROS_DOMAIN_ID env var, then the default domain 0.
+#                   Subscribers must be on the SAME domain or see no topics.
+export ROS2="${ROS2:-0}"
+export RMW="${RMW:-}"
+
+# Build-time ROS 2 state of the checkout (source builds only; a Dist/ package
+# carries whatever it was cooked with and this file no longer applies to it).
+# BuildCarlaUE4.sh writes all module flags on ONE space-separated line.
+# Echoes: on | off | absent.
+carla_ros2_ini_state() {
+  local ini="${CARLA_UE4_ROOT}/Unreal/CarlaUE4/Config/OptionalModules.ini"
+  [ -f "${ini}" ] || { echo absent; return 0; }
+  grep -q 'Ros2 ON' "${ini}" && echo on || echo off
+}
+
+# The ROS 2 runtime flags, as the server's own CarlaSettings parser expects them:
+# FParse::Param(TEXT("-ros2")) matches the token "--ros2" (double dash), and
+# FParse::Value(TEXT("-rmw=")) / TEXT("-ros-domain-id=") match "--rmw=<v>" /
+# "--ros-domain-id=<n>". Echoes nothing when ROS2 != 1.
+carla_ros2_flags() {
+  [ "${ROS2}" = "1" ] || return 0
+  printf '%s' "--ros2"
+  [ -n "${RMW}" ] && printf ' --rmw=%s' "${RMW}"
+  [ -n "${ROS_DOMAIN_ID:-}" ] && printf ' --ros-domain-id=%s' "${ROS_DOMAIN_ID}"
+  return 0
+}
+
 unset _KEEP_CARLA_ROOT _KEEP_UE4_ROOT _SKILL_SCRIPTS_DIR _DERIVED_ROOT _UPROJECT_REL
 
 echo "[env] CARLA_UE4_ROOT  = ${CARLA_UE4_ROOT:-<unset — export it>}"
 echo "[env] UE4_ROOT        = ${UE4_ROOT:-<unset — needed for uncooked modes>}"
+if [ "${ROS2}" = "1" ]; then
+  echo "[env] ROS2            = 1  (server flags: $(carla_ros2_flags))"
+else
+  echo "[env] ROS2            = 0  (set ROS2=1 for the native ROS 2 interface)"
+fi

@@ -14,6 +14,9 @@ Commands:
     door     [--open FL,FR] [--close All]                open/close doors
     physics  [--show] [--mass 1600 --drag 0.3 --max-rpm 6000]   read/tune physics
     telemetry [--off]                        on-screen physics telemetry (rendered)
+    ros-info                                 the ROS 2 command topics for this
+                                             vehicle, with a ready-to-run
+                                             `ros2 topic pub` line
 
 `control` and `ackermann` first turn OFF autopilot (manual and TM control are
 mutually exclusive). A VehicleControl PERSISTS until changed, so `--throttle 0.5`
@@ -196,6 +199,38 @@ def cmd_telemetry(args):
     print(f"id={v.id}: debug telemetry {'off' if args.off else 'on'} (visible on a rendered server)")
 
 
+def cmd_ros_info(args):
+    """Report how (and whether) this vehicle can be driven from ROS 2.
+
+    Read-only. The subscribers live in the server: ROS2::RegisterVehicle creates
+    them, and ActorDispatcher only calls it for a vehicle whose role_name is
+    exactly "hero" — so a non-hero vehicle has no ROS control path at all.
+    """
+    world = _client().get_world()
+    v = _resolve(world, args)
+    role = v.attributes.get("role_name", "")
+    ros_name = v.attributes.get("ros_name", "") or f"actor{v.id}"
+    base = f"rt/carla/{ros_name}"
+
+    print(f"id={v.id} ({v.type_id}) role_name={role!r} ros_name={ros_name!r}")
+    if role != "hero":
+        print("  ros: NOT registered — only role_name 'hero' gets ROS 2 subscribers.")
+        print("  ros: re-spawn it as the ego (spawn-vehicles ego --ros-name ...) to drive it from ROS.")
+        return
+    print(f"  ros: {base}/vehicle_control_cmd     [carla_msgs/CarlaEgoVehicleControl]")
+    print("       fields: header, throttle, steer, brake, hand_brake, reverse, gear,")
+    print("               manual_gear_shift  (same semantics as carla.VehicleControl)")
+    print(f"  ros: {base}/ackermann_control_cmd   [ackermann_msgs/AckermannDriveStamped]")
+    print("       fields: header, drive.{steering_angle, steering_angle_velocity,")
+    print("               speed, acceleration, jerk}")
+    # A ROS 2 node sees the DDS name "rt/<x>" as the topic "/<x>".
+    print(f"\n  from a ROS 2 environment on the same domain (topic = {base[3:]}):")
+    print(f"    ros2 topic pub --once /carla/{ros_name}/vehicle_control_cmd \\")
+    print("      carla_msgs/msg/CarlaEgoVehicleControl '{throttle: 0.5, steer: 0.0}'")
+    print("\n  NOTE: ROS commands and this skill's `control` both write VehicleControl —"
+          "\n        the last writer wins, and a held ROS command overrides local input.")
+
+
 def _sel(sp):
     sp.add_argument("--id", type=int); sp.add_argument("--role"); sp.add_argument("--filter")
     return sp
@@ -242,6 +277,9 @@ def main() -> None:
 
     pt = _sel(sub.add_parser("telemetry", help="on-screen physics telemetry"))
     pt.add_argument("--off", action="store_true"); pt.set_defaults(func=cmd_telemetry)
+
+    _sel(sub.add_parser("ros-info", help="ROS 2 command topics for this vehicle")) \
+        .set_defaults(func=cmd_ros_info)
 
     args = p.parse_args()
     args.func(args)

@@ -180,3 +180,40 @@ cooked assets are reused on the next attempt.
 package), the Docker ingestion route (`Util/Docker/docker_tools.py`), Windows
 packaging, and `make import` of new FBX assets — that last one is a separate
 workflow with its own commandlets.
+## P-ROS2-1: the cook succeeds, then UE4Editor deadlocks on shutdown
+
+Verified 2026-08 on a ROS-2-enabled Shipping cook of this checkout.
+
+Symptom: the cook log ends with
+
+```
+LogInit: Display: Success - 0 error(s), 34538 warning(s)
+Execution of commandlet took:  109.12 seconds
+LogShaderCompilers: Display: Shaders left to compile 0
+LogHttp: Display: cleaning up 0 outstanding Http requests.
+LogContentStreaming: Display: There are 1 unreleased StreamingManagers
+```
+
+...and then nothing, for as long as you let it run (51 minutes here). The cook is
+finished and correct — `Saved/Cooked` holds the full output — but the editor never
+exits: the process drops to **2 threads sleeping in `futex_wait_queue`** with no
+I/O, and UAT blocks waiting for the child.
+
+Diagnosis, without guessing:
+
+```bash
+ls -l --time-style=+%H:%M:%S <cook log>     # log frozen?
+P=$(pgrep -f 'UE4Editor.*CarlaUE4.uproject')
+grep -E '^State|^Threads' /proc/$P/status   # S (sleeping), Threads: 2
+cat /proc/$P/wchan                          # futex_wait_queue
+du -sh Unreal/CarlaUE4/Saved/Cooked         # cooked data present
+```
+
+Recovery: `kill <editor pid>` (never `pkill -f`, which also matches your own
+shell). UAT then reports `Cook failed` / `Error_UnknownCookFailure` and `make`
+exits 25 — a **false** failure, since the cook did complete. **Re-run
+`package.sh`**: `Saved/Cooked` is reused and the second cook is incremental.
+`package.sh` detects this case and says so.
+
+Do not "fix" it by deleting `Saved/Cooked` — that throws away the work and the
+next cook starts from zero.

@@ -21,6 +21,15 @@ rotation_frequency; etc.
 
 The spawned sensor persists as an actor (its id is printed) — feed that id to the
 read-sensor skill to save or view its data. Connection from env.sh.
+
+ROS 2 (only meaningful on a server started with --ros2, see run-carla-server):
+    --ros                enable_for_ros() after spawn. REQUIRED to publish: a
+                         sensor with no listening client is not ticked at all,
+                         so without this it produces neither RPC data nor topics.
+    --ros-name NAME      topic segment for this sensor (default: actor<id>)
+    --ros-frame-id ID    TF frame id (default: the ros name)
+    --no-ros-tf          do not publish this sensor's transform on rt/tf
+`spawn` prints the topics the sensor is expected to publish.
 """
 from __future__ import annotations
 
@@ -28,6 +37,37 @@ import argparse
 import os
 
 import carla  # provided by the active interpreter; check_env.sh verifies this
+
+# --- ROS 2 topic derivation --------------------------------------------------
+# Mirrors LibCarla/source/carla/ros2: ROS2::GetActorBaseTopicName builds
+# "rt/carla/<ros_name>", prefixed by the parent's base name when the actor was
+# attached ("rt/carla/<parent>/<sensor>"), and each publisher appends its own
+# suffix. Sensors NOT in ROS2::GetOrCreateSensor's switch have no publisher.
+_CAMERA_TOPICS = (("/image", "sensor_msgs/Image"),
+                  ("/camera_info", "sensor_msgs/CameraInfo"))
+_CLOUD_TOPICS = (("/point_cloud", "sensor_msgs/PointCloud2"),)
+# Keyed by the part of the blueprint id after "sensor.".
+_ROS_UNSUPPORTED = ("other.lane_invasion", "other.obstacle", "other.rss")
+
+
+def ros_topics_for(type_id: str, base: str):
+    """[(topic, msg_type)] the server publishes for this sensor, or []."""
+    short = type_id[len("sensor."):] if type_id.startswith("sensor.") else type_id
+    if short in _ROS_UNSUPPORTED or "gbuffer" in short:
+        return []
+    if short == "camera.dvs":                      # camera + point cloud
+        return [(base + s, m) for s, m in _CAMERA_TOPICS + _CLOUD_TOPICS]
+    if short.startswith("camera."):
+        return [(base + s, m) for s, m in _CAMERA_TOPICS]
+    if short.startswith("lidar.") or short == "other.radar":
+        return [(base + s, m) for s, m in _CLOUD_TOPICS]
+    if short == "other.imu":
+        return [(base, "sensor_msgs/Imu")]
+    if short == "other.gnss":
+        return [(base, "sensor_msgs/NavSatFix")]
+    if short == "other.collision":
+        return [(base, "carla_msgs/CarlaCollisionEvent")]
+    return []
 
 
 def _client():
@@ -57,6 +97,17 @@ def cmd_spawn(args):
             raise SystemExit(f"{bp.id} has no attribute {k!r}")
         bp.set_attribute(k, v)
 
+    # ROS 2 naming. These three attributes exist on EVERY blueprint (declared in
+    # ActorBlueprintFunctionLibrary::FillIdAndTags) and are read once, at
+    # registration time, so they must be set BEFORE spawning — there is no way
+    # to rename a sensor's topic afterwards.
+    if args.ros_name:
+        bp.set_attribute("ros_name", args.ros_name)
+    if args.ros_frame_id:
+        bp.set_attribute("ros_frame_id", args.ros_frame_id)
+    if args.no_ros_tf:
+        bp.set_attribute("ros_publish_tf", "false")
+
     parent = None
     if args.parent_id is not None:
         parent = world.get_actors().find(args.parent_id)
@@ -81,6 +132,61 @@ def cmd_spawn(args):
         where = f"world-fixed at ({args.x},{args.y},{args.z})"
     print(f"spawned {sensor.type_id} id={sensor.id} {where}")
     print(f"  view/save it with: read-sensor --id {sensor.id}")
+
+    if args.ros:
+        # Without this the stream has no listener, ASensor::Tick returns early
+        # and NOTHING is produced — not even for ROS. It is also what makes a
+        # sensor publish with no Python client attached.
+        sensor.enable_for_ros()
+    _report_ros(sensor, parent, args)
+
+
+def _report_ros(sensor, parent, args):
+    """Print the topics this sensor is expected to publish, and the caveats."""
+    ros_name = args.ros_name or f"actor{sensor.id}"
+    base = f"rt/carla/{ros_name}"
+    if parent is not None:
+        # On attach, the server registers the parent chain, so the sensor's base
+        # topic is nested under its immediate parent's ros name.
+        parent_ros = parent.attributes.get("ros_name", "") or f"actor{parent.id}"
+        base = f"rt/carla/{parent_ros}/{ros_name}"
+    topics = ros_topics_for(sensor.type_id, base)
+    print(f"  ros: name={ros_name} frame_id={args.ros_frame_id or ros_name} "
+          f"tf={'off' if args.no_ros_tf else 'on (rt/tf, parented to ' + ('map' if parent is None else 'the parent frame') + ')'} "
+          f"enabled_for_ros={'yes' if args.ros else 'NO'}")
+    if not topics:
+        print(f"  ros: {sensor.type_id} has NO native publisher — no topic is created")
+    for t, m in topics:
+        print(f"  ros: {t}  [{m}]")
+    if not args.ros:
+        print("  ros: NOT enabled for ROS — pass --ros, or the sensor never ticks "
+              "and publishes nothing")
+
+
+def cmd_ros(args):
+    """Turn native ROS publishing on/off for sensors that already exist.
+
+    enable_for_ros() marks the sensor's stream as listened-to server-side, which
+    is what lets ASensor::Tick run without a Python client — the difference
+    between a sensor that publishes and one that is silent. Idempotent.
+    """
+    world = _client().get_world()
+    if args.id is not None:
+        actor = world.get_actors().find(args.id)
+        if actor is None:
+            raise SystemExit(f"no actor id {args.id}")
+        targets = [actor]
+    else:
+        targets = list(world.get_actors().filter(args.filter))
+    if not targets:
+        raise SystemExit(f"no sensors match {args.filter!r}")
+    for s in targets:
+        if args.disable:
+            s.disable_for_ros()
+        else:
+            s.enable_for_ros()
+        state = "yes" if s.is_enabled_for_ros() else "no"
+        print(f"id={s.id} ({s.type_id}) enabled_for_ros={state}")
 
 
 def cmd_destroy(args):
@@ -109,7 +215,19 @@ def main() -> None:
     ps.add_argument("--roll", type=float, default=0.0)
     ps.add_argument("--attachment", choices=("Rigid", "SpringArm", "SpringArmGhost"), default="Rigid")
     ps.add_argument("--attr", action="append", help="blueprint attribute key=value (repeatable)")
+    ps.add_argument("--ros", action="store_true",
+                    help="enable_for_ros() after spawn — required for the sensor to publish")
+    ps.add_argument("--ros-name", help="ROS topic segment (default actor<id>)")
+    ps.add_argument("--ros-frame-id", help="TF frame id (default: the ros name)")
+    ps.add_argument("--no-ros-tf", action="store_true",
+                    help="do not publish this sensor's transform on rt/tf")
     ps.set_defaults(func=cmd_spawn)
+
+    pr = sub.add_parser("ros", help="enable/disable ROS publishing on existing sensors")
+    pr.add_argument("--id", type=int, help="one sensor (default: every sensor matching --filter)")
+    pr.add_argument("--filter", default="sensor.*")
+    pr.add_argument("--disable", action="store_true", help="disable instead of enable")
+    pr.set_defaults(func=cmd_ros)
 
     pd = sub.add_parser("destroy", help="destroy sensors")
     pd.add_argument("--filter", default="sensor.*")

@@ -96,6 +96,33 @@ returned — confirm the block: the map name is the one you asked for, and the
 settings are default (plain) or unchanged (`--keep`). An OpenDRIVE world reports
 its name as `Carla/Maps/OpenDriveMap`.
 
+### On a ROS 2 server
+
+A map switch is an **episode** switch, so on a server started with `--ros2`
+([[run-carla-server]] `ROS2=1`):
+
+- **`rt/carla/map` re-publishes automatically** — the new map's full OpenDRIVE,
+  as a latched (`transient_local`) `std_msgs/String`. Verified: the sample content
+  changes with the map. It carries no header, so there is no stamp or episode id to
+  correlate with; reading it needs an explicit `--qos-durability transient_local`
+  request (plus `--full-length`, or it truncates at 128 chars).
+- **Every actor is destroyed — but its topics do NOT go away.** Verified: after a
+  switch the old sensor topic is still listed with `Publisher count: 1` and
+  publishes nothing, because the ROS 2 layer does not unregister publishers on
+  episode teardown. Re-spawning with the same `ros_name` then gives
+  **`Publisher count: 2`** — one live, one zombie — and it accumulates per switch.
+  A subscriber can match the dead endpoint and wait forever.
+- **Re-spawn and re-enable after the switch** ([[spawn-vehicles]],
+  [[create-sensor]] `--ros`): `ros_name`s and `enable_for_ros()` state are gone
+  with the actors even though the topics linger.
+- `rt/clock` keeps ticking. Restart the server if the zombie publishers matter for
+  what you are measuring.
+
+Verifying it needs a ROS 2 consumer ([[visualize-ros-rviz]]); from the RPC side,
+[[world-data]] `ros-topics` shows what the new episode should be publishing — and
+disagreement with `ros2 topic list` after a map change is expected, for the reason
+above.
+
 ## Examples
 
 **Example 1: just switch town**

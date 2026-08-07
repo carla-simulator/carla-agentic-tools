@@ -71,6 +71,24 @@ else
   warn "disk: only ${AVAIL_GB:-?} GB free — a release needs ~30 GB and is not resumable"
 fi
 
+# --- ROS 2 native interface (ROS2=${ROS2}) ----------------------------------
+# Build-time state, inherited from the editor build. `make package` re-runs
+# BuildCarlaUE4.sh, so the flag must be repeated here or it flips OFF.
+ROS2_INI="$(carla_ros2_ini_state)"
+if [ "${ROS2}" = "1" ]; then
+  case "${ROS2_INI}" in
+    on)  pass "checkout built with Ros2 ON — the cook keeps it (ARGS gains --ros2)";;
+    off) warn "checkout has Ros2 OFF — this cook will rebuild the editor modules WITH ROS 2 (longer: middleware deps may build too)";;
+    absent) warn "OptionalModules.ini absent — the cook writes it (Ros2 ON)";;
+  esac
+  for d in fast-dds-install cyclone-dds-install zenoh-install; do
+    [ -d "${CARLA_UE4_ROOT}/Build/${d}" ] && pass "middleware dep present: Build/${d}" \
+      || warn "Build/${d} missing — Setup.sh --ros2 builds it from source (long, one-off)"
+  done
+elif [ "${ROS2_INI}" = "on" ]; then
+  warn "checkout is built with Ros2 ON but ROS2=1 is NOT set — this cook produces a package WITHOUT ROS 2 (set ROS2=1 to keep it)"
+fi
+
 # --- Asset packages available to cook --------------------------------------
 PKG_JSONS="$(find -L "${CONTENT_DIR}" -name '*.Package.json' 2>/dev/null | sort)"
 if [ -n "${PKG_JSONS}" ]; then

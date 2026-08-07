@@ -6,7 +6,8 @@ Commands:
     spawn   --count 40 [--filter vehicle.*] [--safe] [--seed 42]
             [--tm-port 8000] [--no-autopilot]        spawn at map spawn points
     line    --at X,Y,Z --count 5 --gap 15 [--backward] [...]   a queue in one lane
-    ego     [--at X,Y,Z] [--filter] [--autopilot]    one hero vehicle, id printed
+    ego     [--at X,Y,Z] [--filter] [--autopilot] [--ros-name hero]
+                                                     one hero vehicle, id printed
     destroy [--filter vehicle.*]                     remove all (or a subset)
 
 `spawn` scatters vehicles across the map's predefined spawn points (one per
@@ -20,7 +21,13 @@ By default vehicles are handed to the Traffic Manager autopilot at spawn time
 `--no-autopilot` leaves them stationary (useful for a static queue). `--safe`
 keeps only four-wheeled cars.
 
-Connection + TM port come from env.sh: CARLA_HOST/PORT/TIMEOUT, TM_PORT.
+ROS 2 (only on a server started with --ros2, see run-carla-server): `ego` takes
+--ros-name / --ros-frame-id / --no-ros-tf. Only a vehicle whose role_name is
+"hero" is registered with the ROS 2 layer — the server checks that explicitly, so
+`spawn`/`line` traffic never publishes and never accepts ROS control commands.
+Registering a hero creates the two control subscribers (vehicle_control_cmd,
+ackermann_control_cmd). It does NOT publish a vehicle transform: rt/tf carries
+sensor->parent transforms only, so map->hero must be broadcast by something else.
 """
 from __future__ import annotations
 
@@ -151,6 +158,15 @@ def cmd_ego(args):
     world = client.get_world()
     bp = _configure(random.choice(_vehicle_bps(world, args.filter, safe=False)), role="hero")
 
+    # ROS 2 naming: read once, at registration, so it must be set before spawn.
+    # These attributes exist on every blueprint (ActorBlueprintFunctionLibrary).
+    if args.ros_name:
+        bp.set_attribute("ros_name", args.ros_name)
+    if args.ros_frame_id:
+        bp.set_attribute("ros_frame_id", args.ros_frame_id)
+    if args.no_ros_tf:
+        bp.set_attribute("ros_publish_tf", "false")
+
     if args.at:
         x, y, z = (float(v) for v in args.at.split(","))
         wp = world.get_map().get_waypoint(carla.Location(x, y, z),
@@ -172,6 +188,19 @@ def cmd_ego(args):
     print(f"spawned ego id={ego.id} ({ego.type_id}) role=hero at "
           f"({loc.x:.0f},{loc.y:.0f},{loc.z:.0f}); autopilot={args.autopilot}")
     print(f"  reference it downstream with role 'hero' (spectator/sensors/telemetry) or id {ego.id}")
+
+    # ROS 2 view of this vehicle. Registration happens server-side at spawn (only
+    # for role_name == "hero"); these are the names it derived.
+    ros_name = args.ros_name or f"actor{ego.id}"
+    base = f"rt/carla/{ros_name}"
+    # rt/tf carries sensor->parent transforms only: a vehicle alone publishes no
+    # transform (verified). ros_publish_tf therefore affects sensors under it.
+    print(f"  ros: name={ros_name} frame_id={args.ros_frame_id or ros_name} "
+          f"ros_publish_tf={'false' if args.no_ros_tf else 'true'} "
+          f"(no vehicle transform is published; rt/tf appears once a SENSOR does)")
+    print(f"  ros: subscribes {base}/vehicle_control_cmd     [carla_msgs/CarlaEgoVehicleControl]")
+    print(f"  ros: subscribes {base}/ackermann_control_cmd   [ackermann_msgs/AckermannDriveStamped]")
+    print(f"  ros: sensors attached to it nest under {base}/<sensor ros_name>")
 
 
 def cmd_destroy(args):
@@ -212,6 +241,9 @@ def main() -> None:
     pe.add_argument("--at", help="X,Y,Z near a lane (default: a random spawn point)")
     pe.add_argument("--filter", default="vehicle.*")
     pe.add_argument("--autopilot", action="store_true", help="also enrol the ego in autopilot")
+    pe.add_argument("--ros-name", help="ROS topic segment for this vehicle (default actor<id>)")
+    pe.add_argument("--ros-frame-id", help="TF frame id (default: the ros name)")
+    pe.add_argument("--no-ros-tf", action="store_true", help="do not publish its transform on rt/tf")
     pe.add_argument("--tm-port", type=int, default=int(os.environ.get("TM_PORT", "8000")))
     pe.set_defaults(func=cmd_ego)
 

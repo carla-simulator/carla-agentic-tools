@@ -13,6 +13,9 @@ Commands:
     level-bbox --label Buildings [--limit]  static level bounding boxes by label
     raycast --from X,Y,Z --to X,Y,Z        semantic points a ray crosses
     ground  --at X,Y,Z [--search 1000]     drop a point to the ground below it
+    ros-topics [--filter] [--all]          the ROS 2 topic tree the server is
+                                           expected to publish, per actor, with
+                                           the reason for each silent one
 
 Identify by STABLE attributes (id, type, role, color) or the spatial predicate
 --nearest (closest to --near/--near-id). There is NO rank/order among peer actors,
@@ -96,6 +99,99 @@ def cmd_actors(args):
           "positions move, so re-query for a fresh distance.")
 
 
+# --- ROS 2 topic tree -------------------------------------------------------
+# Derived exactly as the server does (LibCarla/source/carla/ros2 +
+# ActorDispatcher::RegisterActor): base name "rt/carla/<ros_name>", nested under
+# the parent's base name when attached, unnamed actors become "actor<id>". Only
+# sensors and the hero VEHICLE are registered; sensors additionally have to be
+# enabled for ROS to tick at all.
+_CAMERA_TOPICS = (("/image", "sensor_msgs/Image"),
+                  ("/camera_info", "sensor_msgs/CameraInfo"))
+_CLOUD_TOPICS = (("/point_cloud", "sensor_msgs/PointCloud2"),)
+_ROS_UNSUPPORTED = ("other.lane_invasion", "other.obstacle", "other.rss")
+
+
+def _sensor_topics(type_id, base):
+    short = type_id[len("sensor."):] if type_id.startswith("sensor.") else type_id
+    if short in _ROS_UNSUPPORTED or "gbuffer" in short:
+        return []
+    if short == "camera.dvs":
+        return [(base + s, m) for s, m in _CAMERA_TOPICS + _CLOUD_TOPICS]
+    if short.startswith("camera."):
+        return [(base + s, m) for s, m in _CAMERA_TOPICS]
+    if short.startswith("lidar.") or short == "other.radar":
+        return [(base + s, m) for s, m in _CLOUD_TOPICS]
+    if short == "other.imu":
+        return [(base, "sensor_msgs/Imu")]
+    if short == "other.gnss":
+        return [(base, "sensor_msgs/NavSatFix")]
+    if short == "other.collision":
+        return [(base, "carla_msgs/CarlaCollisionEvent")]
+    return []
+
+
+def _ros_name(a):
+    return a.attributes.get("ros_name", "") or f"actor{a.id}"
+
+
+def cmd_ros_topics(args):
+    """Map live actors to the ROS 2 topics they should be publishing.
+
+    Works with no ROS 2 installed — it answers "what SHOULD be on the wire and
+    why isn't it" from the RPC side, which is the half a `ros2 topic list` can't
+    explain. Compare its output with `ros2 topic list` to locate the gap.
+    """
+    world = _world()
+    actors = world.get_actors()
+    rows = list(actors.filter(args.filter)) if args.filter else list(actors)
+
+    print("world topics (exist whenever the server runs with --ros2):")
+    print("  rt/clock       [rosgraph_msgs/Clock]  every tick")
+    print("  rt/carla/map   [std_msgs/String]      OpenDRIVE, LATCHED, re-sent on map load")
+    print("  rt/tf          [tf2_msgs/TFMessage]   sensor->parent transforms ONLY;")
+    print("                 absent until a sensor publishes (a vehicle alone emits no transform)")
+
+    sensors = [a for a in rows if a.type_id.startswith("sensor.")]
+    heroes = [a for a in rows if a.type_id.startswith("vehicle.")
+              and a.attributes.get("role_name", "") == "hero"]
+    others = [a for a in rows if a.type_id.startswith("vehicle.") and a not in heroes]
+
+    print(f"\nhero vehicle(s): {len(heroes)}")
+    for v in heroes:
+        base = f"rt/carla/{_ros_name(v)}"
+        tf = "" if v.attributes.get("ros_publish_tf", "true").lower() != "false" else "  (tf OFF)"
+        print(f"  id={v.id} {v.type_id} ros_name={_ros_name(v)}{tf}")
+        print(f"    <- {base}/vehicle_control_cmd     [carla_msgs/CarlaEgoVehicleControl]")
+        print(f"    <- {base}/ackermann_control_cmd   [ackermann_msgs/AckermannDriveStamped]")
+    if others and args.all:
+        print(f"  {len(others)} non-hero vehicle(s): not registered with ROS 2 "
+              "(the server registers vehicles only when role_name == 'hero')")
+
+    print(f"\nsensors: {len(sensors)}")
+    for s in sensors:
+        parent = s.parent
+        base = f"rt/carla/{_ros_name(s)}"
+        if parent is not None:
+            base = f"rt/carla/{_ros_name(parent)}/{_ros_name(s)}"
+        try:
+            enabled = s.is_enabled_for_ros()
+        except AttributeError:
+            enabled = None
+        topics = _sensor_topics(s.type_id, base)
+        flag = {True: "", False: "  [NOT enabled_for_ros -> SILENT]",
+                None: "  [enabled_for_ros unknown]"}[enabled]
+        print(f"  id={s.id} {s.type_id} ros_name={_ros_name(s)}{flag}")
+        if not topics:
+            print(f"    (no native publisher for {s.type_id})")
+        for t, m in topics:
+            print(f"    -> {t}  [{m}]")
+
+    print("\nnote: names are DDS names; a ROS 2 node sees rt/X as /X. Nothing is")
+    print("      published at all unless the server was BUILT and STARTED with ROS 2")
+    print("      (build-carla-ue4 ROS2=1, run-carla-server ROS2=1), and subscribers")
+    print("      must share its ROS_DOMAIN_ID.")
+
+
 def cmd_snapshot(args):
     world = _world()
     snap = world.get_snapshot()
@@ -169,6 +265,11 @@ def main() -> None:
     pg = sub.add_parser("ground", help="project a point to the ground")
     pg.add_argument("--at", required=True); pg.add_argument("--search", type=float, default=1000.0)
     pg.set_defaults(func=cmd_ground)
+
+    prt = sub.add_parser("ros-topics", help="ROS 2 topic tree the server should publish")
+    prt.add_argument("--filter", default="", help="restrict to matching actors (e.g. 'sensor.*')")
+    prt.add_argument("--all", action="store_true", help="also count non-hero vehicles (never registered)")
+    prt.set_defaults(func=cmd_ros_topics)
 
     args = p.parse_args()
     args.func(args)

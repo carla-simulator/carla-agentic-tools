@@ -103,6 +103,27 @@ ARGS=("--packages=${PACKAGES}" "--config=${PACKAGE_CONFIG}")
 carla_require_wheel_python "${_PYV_PIN}" || exit 1
 [ -n "${CARLA_PY_ARG}" ] && ARGS+=("${CARLA_PY_ARG}")
 
+# ROS 2: forwarded through `make package` so the CarlaUE4Editor dependency
+# re-runs BuildCarlaUE4.sh WITH --ros2 and keeps `Ros2 ON` in
+# Config/OptionalModules.ini. Package.sh and BuildPythonAPI.sh don't declare the
+# option and drop it with a harmless "unrecognized option" line on stderr; only
+# the editor/LibCarla/Setup stages act on it (references/ros2.md).
+if [ "${ROS2}" = "1" ]; then
+  ARGS+=("--ros2")
+  echo "[package] ROS2=1 — cooking with the native ROS 2 interface."
+  echo "[package] NOTE: 'parse-options: unrecognized option --ros2' from Package.sh /"
+  echo "[package]       BuildPythonAPI.sh is expected; they drop unknown options."
+elif [ "$(carla_ros2_ini_state)" = "on" ]; then
+  # The checkout was last built with ROS 2, but this cook would rewrite the ini
+  # to `Ros2 OFF` and produce a package without it. Cheaper to say so now than
+  # after a 30-90 min cook.
+  echo "[package] WARN: this checkout is built with Ros2 ON, but ROS2=1 was not set."
+  echo "[package]       The CarlaUE4Editor dependency will rewrite OptionalModules.ini"
+  echo "[package]       to 'Ros2 OFF' and the package will have NO ROS 2 support."
+  echo "[package]       Re-run with ROS2=1 to keep it. Continuing in 5s..."
+  sleep 5
+fi
+
 # Mirrors get_git_repository_version (Util/BuildTools/Environment.sh) so artifact
 # names are predictable. A dirty tree yields a '-dirty' tag.
 cd "${CARLA_UE4_ROOT}"
@@ -118,7 +139,30 @@ SUF=""; [ -n "${ARCHIVE_SUFIX}" ] && SUF="_${ARCHIVE_SUFIX}"
 echo "[package] tag=${TAG}  packages=${PACKAGES}  config=${PACKAGE_CONFIG}  zip=${PACKAGE_ZIP}"
 echo "[package] make package — expect 30-90 min on a cold shader cache..."
 
-make package ARGS="${ARGS[*]}"
+# The cook can SUCCEED and still fail the build: UE4Editor sometimes deadlocks on
+# shutdown after "Success - 0 error(s)" (2 threads left in futex_wait, no I/O, log
+# frozen), UAT waits for the child forever, and killing it makes UAT report
+# Error_UnknownCookFailure. Verified 2026-08 — the cook sat idle for 51 minutes.
+# The cooked data in Saved/Cooked survives, so the fix is to re-run this script:
+# the second cook is incremental. Catch the failure to say so instead of leaving
+# a bare `make` error.
+if ! make package ARGS="${ARGS[*]}"; then
+  echo "[package] ERROR: make package failed." >&2
+  if grep -q "Success - 0 error" "${HOME}/Library/Logs/Unreal Engine/LocalBuildLogs/Log.txt" 2>/dev/null; then
+    echo "[package] The cook itself reported success — this looks like the UE4Editor" >&2
+    echo "[package] shutdown deadlock (see references/packaging.md). Saved/Cooked is" >&2
+    echo "[package] intact, so simply RE-RUN this script; the next cook is incremental." >&2
+  fi
+  exit 1
+fi
+
+# The ini is what decided WITH_ROS2 for the modules this cook staged, so check it
+# before trusting the package's ROS 2 support.
+if [ "${ROS2}" = "1" ] && [ "$(carla_ros2_ini_state)" != "on" ]; then
+  echo "[package] ERROR: ROS2=1 but Config/OptionalModules.ini says Ros2 $(carla_ros2_ini_state)." >&2
+  echo "[package] The staged binaries have NO ROS 2 support — do not ship this package." >&2
+  exit 1
+fi
 
 # --- Verify artifacts, not the exit code -----------------------------------
 # PRODUCED collects the top-level Dist/ entry for each verified package (the

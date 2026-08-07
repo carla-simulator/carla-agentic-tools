@@ -1,11 +1,12 @@
 ---
 name: build-carla-ue4
-description: Builds CARLA (branch ue4-dev, Unreal Engine 4.26) from source on Linux end-to-end — UE4 fork, the Carla server (editor C++ modules), the LibCarla Python client wheel, and content — then verifies them against a from-source server. Use when the user asks to "build CARLA from source", "compile CARLA ue4-dev", "set up CARLA on Ubuntu (incl. 24.04)", or "produce a CARLA server + client wheel". Cooking a distributable Dist/ package is a separate skill (package-carla-ue4); running the build is run-carla-server.
+description: Builds CARLA (branch ue4-dev, Unreal Engine 4.26) from source on Linux end-to-end — UE4 fork, the Carla server (editor C++ modules), the LibCarla Python client wheel, and content — then verifies them against a from-source server. Optionally builds the native ROS 2 interface in (ROS2=1 → --ros2, Fast-DDS/CycloneDDS/Zenoh), which is compile-time only and cannot be enabled later. Use when the user asks to "build CARLA from source", "compile CARLA ue4-dev", "set up CARLA on Ubuntu (incl. 24.04)", "build CARLA with ROS2 support", or "produce a CARLA server + client wheel". Cooking a distributable Dist/ package is a separate skill (package-carla-ue4); running the build is run-carla-server.
 license: MIT
 compatibility: Linux x86_64 (Ubuntu 20.04/22.04/24.04). Requires an Epic-linked GitHub account (the UE4 fork is private), ~120 GB free disk, an NVIDIA GPU for the rendering server, and an active Python client env (venv, conda, or system — no manager assumed). A full build takes several hours.
 metadata:
   prerequisites: scripts/check_env.sh
   reference: references/lessons.md
+  ros2: references/ros2.md
   requires: run-carla-server
 ---
 
@@ -116,8 +117,38 @@ bash scripts/07_verify.sh
 | 03 | `scripts/03_build_ue4.sh` | **engine** — UE4 fork: Setup → GenerateProjectFiles → make | ~10GB dl + ~1h; **no `-j`** (L9); skips if `UE4Editor` built |
 | 04 | `scripts/04_build_pythonapi.sh` | **PythonAPI** — LibCarla client + boost + wheel → install to active env | needs 02+03; skips if `import carla` works (`FORCE=1`) |
 | 05 | `scripts/05_fetch_content.sh` | `git clone` carla-content (bitbucket) → Content/Carla | ~31GB; parallel-safe |
-| 06 | `scripts/06_build_editor.sh` | **server** — `make CarlaUE4Editor` (Carla plugin + CarlaTools); `TARGET=launch` → `make launch` (opt-in editor UI) | needs 03; incremental, no cook; skips if plugin `.so` built (`FORCE=1`) |
+| 06 | `scripts/06_build_editor.sh` | **server** — `make CarlaUE4Editor` (Carla plugin + CarlaTools); `TARGET=launch` → `make launch` (opt-in editor UI); `ROS2=1` adds the native ROS 2 interface | needs 03; incremental, no cook; skips if plugin `.so` built and the ROS 2 flag matches (`FORCE=1`) |
 | 07 | `scripts/07_verify.sh` | boot **from-source** server via [[run-carla-server]] (uncooked `-nullrhi`), run `generate_traffic.py` | proof; needs 04+05+06 |
+
+### ROS 2 native interface (`ROS2=1`, opt-in)
+
+CARLA can publish DDS topics from **inside** the server (no `carla-ros-bridge`).
+That support is **compile-time only** — decide it here:
+
+```bash
+ROS2=1 bash scripts/06_build_editor.sh      # == make CarlaUE4Editor ARGS="--ros2"
+```
+
+One flag, three consumers, because `Linux.mk` forwards `ARGS` down
+`CarlaUE4Editor → LibCarla.server.release → setup`: `Setup.sh` builds Fast-DDS +
+CycloneDDS + Zenoh from source into `Build/*-install` (long, cached),
+`BuildLibCarla.sh` builds `carla_ros2`, `BuildCarlaUE4.sh` writes `Ros2 ON` into
+`Unreal/CarlaUE4/Config/OptionalModules.ini` — the file `Carla.Build.cs` reads to
+define `WITH_ROS2`.
+
+Three things to know, all consequences of that ini being **sticky global state**:
+
+- **A plain (`ROS2=0`) re-run turns it back OFF** — the ini is rewritten every
+  build. Step 06 detects the flip and rebuilds instead of skipping.
+- **`make package` re-runs the editor build**, so [[package-carla-ue4]] needs
+  `ROS2=1` too or the cooked package loses ROS 2 — silently.
+- **`parse-options: unrecognized option '--ros2'`** on stderr is expected and
+  harmless (`BuildUE4Plugins.sh` drops unknown options).
+
+Building it in does **not** turn it on: the server also needs the `--ros2`
+runtime flag ([[run-carla-server]] `ROS2=1`). No ROS 2 installation is required
+to build or run — only to consume the topics. Full detail, including how to prove
+the support is really in the binary, in [`references/ros2.md`](references/ros2.md).
 
 Step 06 (`server`) doubles as the cheap incremental recompile after touching
 `Unreal/CarlaUE4/Plugins/` — binaries only, no cook — and is the target
