@@ -31,10 +31,10 @@ fi
 
 if [ -z "${CARLA_UE4_ROOT}" ]; then
   fail "CARLA_UE4_ROOT is unset — export it, or run from inside a carla checkout"
-elif [ -f "${CARLA_UE4_ROOT}/Util/BuildTools/Package.sh" ]; then
+elif [ -f "${CARLA_UE4_ROOT}/Unreal/CarlaUE4/CarlaUE4.uproject" ]; then
   pass "carla checkout at ${CARLA_UE4_ROOT}"
 else
-  fail "no Util/BuildTools/Package.sh under ${CARLA_UE4_ROOT} — CARLA_UE4_ROOT is wrong"
+  fail "no Unreal/CarlaUE4/CarlaUE4.uproject under ${CARLA_UE4_ROOT} — CARLA_UE4_ROOT is wrong"
 fi
 
 # --- Content: not a blocker, but packaging without it wastes the whole run ---
@@ -45,9 +45,9 @@ else
 fi
 
 # --- Active python: the wheel stage runs `python3 -m build` -----------------
-# Manager-agnostic: whatever env is active (venv/conda/system) must provide a
-# `python3` that imports `build`. No conda assumption. A pinned CARLA_PY_VERSION
-# means a version-suffixed interpreter is used instead, so check that one.
+# Manager-agnostic: whatever env is active must provide a `python3` that imports
+# `build`. A pinned CARLA_PY_VERSION means a version-suffixed interpreter is used
+# instead, so check that one.
 if [ -n "${CARLA_PY_VERSION:-}" ]; then PYBIN="python${CARLA_PY_VERSION}"; else PYBIN="python3"; fi
 PYPATH="$(command -v "${PYBIN}" 2>/dev/null || true)"
 if [ -z "${PYPATH}" ]; then
@@ -71,6 +71,24 @@ else
   warn "disk: only ${AVAIL_GB:-?} GB free — a release needs ~30 GB and is not resumable"
 fi
 
+# --- ROS 2 native interface (ROS2=${ROS2}) ----------------------------------
+# Build-time state, inherited from the editor build. `make package` re-runs
+# BuildCarlaUE4.sh, so the flag must be repeated here or it flips OFF.
+ROS2_INI="$(carla_ros2_ini_state)"
+if [ "${ROS2}" = "1" ]; then
+  case "${ROS2_INI}" in
+    on)  pass "checkout built with Ros2 ON — the cook keeps it (ARGS gains --ros2)";;
+    off) warn "checkout has Ros2 OFF — this cook will rebuild the editor modules WITH ROS 2 (longer: middleware deps may build too)";;
+    absent) warn "OptionalModules.ini absent — the cook writes it (Ros2 ON)";;
+  esac
+  for d in fast-dds-install cyclone-dds-install zenoh-install; do
+    [ -d "${CARLA_UE4_ROOT}/Build/${d}" ] && pass "middleware dep present: Build/${d}" \
+      || warn "Build/${d} missing — Setup.sh --ros2 builds it from source (long, one-off)"
+  done
+elif [ "${ROS2_INI}" = "on" ]; then
+  warn "checkout is built with Ros2 ON but ROS2=1 is NOT set — this cook produces a package WITHOUT ROS 2 (set ROS2=1 to keep it)"
+fi
+
 # --- Asset packages available to cook --------------------------------------
 PKG_JSONS="$(find -L "${CONTENT_DIR}" -name '*.Package.json' 2>/dev/null | sort)"
 if [ -n "${PKG_JSONS}" ]; then
@@ -85,13 +103,11 @@ fi
 
 # --- Dist/ checks: only when it exists (absent before the first package) -----
 if [ -d "${CARLA_UE4_ROOT}/Dist" ]; then
-  # Stale .tar would be appended to by tar -rf.
   STALE="$(find "${CARLA_UE4_ROOT}/Dist" -maxdepth 1 -name '*.tar' 2>/dev/null || true)"
   if [ -n "${STALE}" ]; then
     warn "stale uncompressed .tar in Dist/ — tar -rf APPENDS to these; remove before re-running:"
     printf '%s\n' "${STALE}" | sed 's/^/        /'
   fi
-  # Existing artifacts will be superseded.
   if compgen -G "${CARLA_UE4_ROOT}/Dist/*.tar.gz" >/dev/null; then
     warn "Dist/ already holds packages:"
     ls -lah "${CARLA_UE4_ROOT}"/Dist/*.tar.gz | sed 's/^/        /'

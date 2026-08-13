@@ -1,6 +1,6 @@
 ---
 name: read-sensor
-description: Listens to a CARLA sensor and either saves its data to files, shows it live in a window, or prints a one-shot summary. Cameras save as PNG (depth/semantic auto-colourised) and display in a pygame window; lidar saves as .ply and shows as a top-down scatter; IMU/GNSS/radar/collision stream to JSONL or the console. Use when the user asks to "show/view the camera", "display the lidar", "save the sensor data / capture a dataset", or "what is this sensor reading". Select the sensor by id, type, or the actor it's attached to.
+description: Listens to a CARLA sensor and either saves its data to files, shows it live in a window, prints a one-shot summary, or (ros-info) reports the native ROS 2 topics, QoS and enabled-for-ROS state so you can echo it from ROS instead. Cameras save as PNG (depth/semantic auto-colourised) and display in a pygame window; lidar saves as .ply and shows as a top-down scatter; IMU/GNSS/radar/collision stream to JSONL or the console. Use when the user asks to "show/view the camera", "display the lidar", "save the sensor data / capture a dataset", or "what is this sensor reading". Select the sensor by id, type, or the actor it's attached to.
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI, numpy, and (for windows) pygame installed for the active interpreter, and a reachable running CARLA server with a sensor. A window needs a display; saving/summary work headless. Tested against CARLA 0.9.16.
 metadata:
@@ -53,7 +53,57 @@ python3 scripts/read_sensor.py save --id 123 --out ./capture --frames 50
 
 # MULTI-SENSOR: tile several cameras/lidars in one window
 python3 scripts/read_sensor.py grid --ids 123,124,125 --seconds 30
+
+# ROS 2: which topics does this sensor publish, and is it actually publishing?
+python3 scripts/read_sensor.py ros-info --id 123
 ```
+
+### Reading it from ROS 2 instead
+
+On a server started with `--ros2` the sensor also publishes DDS topics, and
+`ros-info` reports them without needing ROS 2 installed — it derives the names
+the way the server does and reads back `is_enabled_for_ros()`:
+
+```
+sensor id=123 (sensor.camera.rgb)
+  ros_name='front' frame_id='front' parent_frame=hero
+  rt/carla/hero/front/image        [sensor_msgs/Image]       qos=best_effort, volatile, depth=1   (ROS node sees /carla/hero/front/image)
+  rt/carla/hero/front/camera_info  [sensor_msgs/CameraInfo]  ...
+  rt/tf: yes
+  enabled_for_ros=NO — this sensor is NOT publishing. Fix with: ...
+```
+
+Then, from a ROS 2 environment on the **same domain** — and with the checkout's
+RMW profile exported, or nothing arrives (see below):
+
+```bash
+set +u; source /opt/ros/humble/setup.bash          # setup.bash breaks under set -u
+export FASTRTPS_DEFAULT_PROFILES_FILE=$CARLA_UE4_ROOT/PythonAPI/examples/ros2/config/fastrtps-profile.xml
+ros2 topic echo --once /carla/hero/front/camera_info
+ros2 topic hz /carla/hero/front/image        # rate sanity, cheaper than echo
+```
+
+Points to know, all verified against a live server:
+
+- **A local subscriber without that RMW profile gets nothing.** `topic list` shows
+  the topics, `hz` prints nothing, no error appears anywhere: CARLA's Fast DDS is
+  built with shared memory and a stock ROS 2 install does not match it. The
+  profile forces UDP-only. `visualize-ros-rviz local-env` prints the exports.
+- **`enabled_for_ros=NO` means silence, not a slow topic.** Enable it with
+  [[create-sensor]] `ros --id N` (or `--ros` at spawn).
+- **Image and point-cloud topics are best-effort** (`PublisherQos::SensorData`),
+  history depth 1: a late or slow subscriber loses frames rather than stalling the
+  server. IMU/GNSS/collision are reliable.
+- **Durability is transient_local on fastdds — on every topic**, not just
+  `rt/carla/map`: the middleware only ever raises durability and Fast DDS's default
+  writer QoS is already transient_local. Do not rely on "volatile" anywhere.
+- **Rates follow the tick, not the sensor.** With `sensor_tick` unset on an async
+  `-nullrhi` server the lidar measured ~2.7 kHz. Set `sensor_tick` or use sync
+  mode for realistic rates.
+- **Stamps are simulation time**, driven by the same clock as `rt/clock` — run
+  subscribers with `use_sim_time` or every timestamp looks wrong.
+- **This skill's `show`/`save` and a ROS subscriber can run at once**; they are
+  independent consumers of the same sensor.
 
 ## Examples
 
@@ -90,6 +140,16 @@ window is client-side (independent of the server's own rendering).
 **Problem: depth/semantic image looks wrong when saved raw**
 Cause: those need a colour converter.
 Solution: this skill auto-applies LogarithmicDepth / CityScapes for save and show.
+
+**Problem: `ros2 topic echo` prints nothing but `info` here shows data**
+Cause: the sensor ticks because *this* skill is listening; it is not enabled for
+ROS, or the subscriber is on a different `ROS_DOMAIN_ID`.
+Solution: `ros-info` (reports both), then [[create-sensor]] `ros --id N`; match
+the domain the server was started with ([[run-carla-server]]).
+
+**Problem: ROS timestamps look decades off / TF complains about the future**
+Cause: the subscriber uses wall time; CARLA stamps simulation time.
+Solution: run subscribers with `use_sim_time` and let them follow `/clock`.
 
 **Problem: data stops when the command ends**
 Cause: listening is a callback in this process; it ends with the command.

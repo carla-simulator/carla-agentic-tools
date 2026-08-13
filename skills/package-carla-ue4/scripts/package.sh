@@ -25,10 +25,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # the wheel stage then uses plain `python3` from whatever environment is active,
 # and no version is forwarded to `make`.
 _PYV_PIN="${CARLA_PY_VERSION:-}"
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-# Best-effort project-local env (direnv / CARLA_ENV_ACTIVATE). Both optional.
-carla_load_local_env "${HERE}"
+# Optional CARLA_ENV_ACTIVATE hook; a no-op when unset.
 
 # Self-contained env for this skill — provides UE4_ROOT / CARLA_UE4_ROOT and
 # makes no environment-manager assumption. Keep CARLA_PY_VERSION empty unless
@@ -103,8 +100,29 @@ ARGS=("--packages=${PACKAGES}" "--config=${PACKAGE_CONFIG}")
 # after the editor compile and before the cook, so a miss costs the compile
 # (references/packaging.md P1). Verify it now and, ONLY when pinned, forward the
 # version to `make` — otherwise the active env's `python3` is used as-is.
-carla_require_build_python "${_PYV_PIN}" || exit 1
+carla_require_wheel_python "${_PYV_PIN}" || exit 1
 [ -n "${CARLA_PY_ARG}" ] && ARGS+=("${CARLA_PY_ARG}")
+
+# ROS 2: forwarded through `make package` so the CarlaUE4Editor dependency
+# re-runs BuildCarlaUE4.sh WITH --ros2 and keeps `Ros2 ON` in
+# Config/OptionalModules.ini. Package.sh and BuildPythonAPI.sh don't declare the
+# option and drop it with a harmless "unrecognized option" line on stderr; only
+# the editor/LibCarla/Setup stages act on it (references/ros2.md).
+if [ "${ROS2}" = "1" ]; then
+  ARGS+=("--ros2")
+  echo "[package] ROS2=1 — cooking with the native ROS 2 interface."
+  echo "[package] NOTE: 'parse-options: unrecognized option --ros2' from Package.sh /"
+  echo "[package]       BuildPythonAPI.sh is expected; they drop unknown options."
+elif [ "$(carla_ros2_ini_state)" = "on" ]; then
+  # The checkout was last built with ROS 2, but this cook would rewrite the ini
+  # to `Ros2 OFF` and produce a package without it. Cheaper to say so now than
+  # after a 30-90 min cook.
+  echo "[package] WARN: this checkout is built with Ros2 ON, but ROS2=1 was not set."
+  echo "[package]       The CarlaUE4Editor dependency will rewrite OptionalModules.ini"
+  echo "[package]       to 'Ros2 OFF' and the package will have NO ROS 2 support."
+  echo "[package]       Re-run with ROS2=1 to keep it. Continuing in 5s..."
+  sleep 5
+fi
 
 # Mirrors get_git_repository_version (Util/BuildTools/Environment.sh) so artifact
 # names are predictable. A dirty tree yields a '-dirty' tag.
@@ -121,7 +139,30 @@ SUF=""; [ -n "${ARCHIVE_SUFIX}" ] && SUF="_${ARCHIVE_SUFIX}"
 echo "[package] tag=${TAG}  packages=${PACKAGES}  config=${PACKAGE_CONFIG}  zip=${PACKAGE_ZIP}"
 echo "[package] make package — expect 30-90 min on a cold shader cache..."
 
-make package ARGS="${ARGS[*]}"
+# The cook can SUCCEED and still fail the build: UE4Editor sometimes deadlocks on
+# shutdown after "Success - 0 error(s)" (2 threads left in futex_wait, no I/O, log
+# frozen), UAT waits for the child forever, and killing it makes UAT report
+# Error_UnknownCookFailure. Verified 2026-08 — the cook sat idle for 51 minutes.
+# The cooked data in Saved/Cooked survives, so the fix is to re-run this script:
+# the second cook is incremental. Catch the failure to say so instead of leaving
+# a bare `make` error.
+if ! make package ARGS="${ARGS[*]}"; then
+  echo "[package] ERROR: make package failed." >&2
+  if grep -q "Success - 0 error" "${HOME}/Library/Logs/Unreal Engine/LocalBuildLogs/Log.txt" 2>/dev/null; then
+    echo "[package] The cook itself reported success — this looks like the UE4Editor" >&2
+    echo "[package] shutdown deadlock (see references/packaging.md). Saved/Cooked is" >&2
+    echo "[package] intact, so simply RE-RUN this script; the next cook is incremental." >&2
+  fi
+  exit 1
+fi
+
+# The ini is what decided WITH_ROS2 for the modules this cook staged, so check it
+# before trusting the package's ROS 2 support.
+if [ "${ROS2}" = "1" ] && [ "$(carla_ros2_ini_state)" != "on" ]; then
+  echo "[package] ERROR: ROS2=1 but Config/OptionalModules.ini says Ros2 $(carla_ros2_ini_state)." >&2
+  echo "[package] The staged binaries have NO ROS 2 support — do not ship this package." >&2
+  exit 1
+fi
 
 # --- Verify artifacts, not the exit code -----------------------------------
 # PRODUCED collects the top-level Dist/ entry for each verified package (the

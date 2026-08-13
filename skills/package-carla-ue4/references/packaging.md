@@ -29,7 +29,6 @@ assumes no particular environment manager.
 | `CARLA_UE4_ROOT` | `$PWD` if a checkout, else path-derived | carla source, branch ue4-dev |
 | `CARLA_PY_VERSION` | unset | Leave empty: the wheel stage uses the active `python3`. Set only to force a version-suffixed interpreter (`python<X.Y>`), which must resolve inside the active env. |
 | `CARLA_ENV_ACTIVATE` | unset | Optional path to an activate script to source — the manager-agnostic escape hatch for non-interactive runs. |
-| `CARLA_MAKE_JOBS` | `nproc` | lower on memory-tight machines |
 
 Skill knobs, mapped onto `Package.sh` flags:
 
@@ -151,9 +150,9 @@ source build, and a Linux package cannot be imported into a Windows release.
 
 `PythonAPI.wheel` runs `/usr/bin/env python3 -m build` (default
 `PY_VERSION_LIST=3`). It runs after the editor compile and **before** the cook,
-so a miss costs the compile but not the cook. There is no conda requirement: any
-env whose `python3` imports `build` works — a uv/venv, conda, or system Python.
-`scripts/package.sh` verifies this up front (`carla_require_build_python`) and
+so a miss costs the compile but not the cook. No environment manager is
+required: any env whose `python3` imports `build` works.
+`scripts/package.sh` verifies this up front (`carla_require_wheel_python`) and
 forwards **no** `--python-version`, so the active env's `python3` is used as-is.
 
 Set `CARLA_PY_VERSION` only when you need a specific interpreter, and it must
@@ -169,8 +168,11 @@ The prerequisite checks warn; `scripts/package.sh` refuses to start.
 
 ## P3 — cook OOM
 
-The cook parallelises and each worker is memory-hungry. Below roughly 2 GB of
-RAM per core, cap it with `CARLA_MAKE_JOBS=4`.
+The cook parallelises and each worker is memory-hungry. This skill exposes no
+knob for it: `make package` calls `Package.sh`, which calls `RunUAT.sh
+BuildCookRun` — nothing in that chain takes a job count. Free RAM or add swap.
+A killed cook is not wasted: `BuildCookRun` runs with `-iterate`, so already-
+cooked assets are reused on the next attempt.
 
 ## Not covered
 
@@ -178,3 +180,40 @@ RAM per core, cap it with `CARLA_MAKE_JOBS=4`.
 package), the Docker ingestion route (`Util/Docker/docker_tools.py`), Windows
 packaging, and `make import` of new FBX assets — that last one is a separate
 workflow with its own commandlets.
+## P-ROS2-1: the cook succeeds, then UE4Editor deadlocks on shutdown
+
+Verified 2026-08 on a ROS-2-enabled Shipping cook of this checkout.
+
+Symptom: the cook log ends with
+
+```
+LogInit: Display: Success - 0 error(s), 34538 warning(s)
+Execution of commandlet took:  109.12 seconds
+LogShaderCompilers: Display: Shaders left to compile 0
+LogHttp: Display: cleaning up 0 outstanding Http requests.
+LogContentStreaming: Display: There are 1 unreleased StreamingManagers
+```
+
+...and then nothing, for as long as you let it run (51 minutes here). The cook is
+finished and correct — `Saved/Cooked` holds the full output — but the editor never
+exits: the process drops to **2 threads sleeping in `futex_wait_queue`** with no
+I/O, and UAT blocks waiting for the child.
+
+Diagnosis, without guessing:
+
+```bash
+ls -l --time-style=+%H:%M:%S <cook log>     # log frozen?
+P=$(pgrep -f 'UE4Editor.*CarlaUE4.uproject')
+grep -E '^State|^Threads' /proc/$P/status   # S (sleeping), Threads: 2
+cat /proc/$P/wchan                          # futex_wait_queue
+du -sh Unreal/CarlaUE4/Saved/Cooked         # cooked data present
+```
+
+Recovery: `kill <editor pid>` (never `pkill -f`, which also matches your own
+shell). UAT then reports `Cook failed` / `Error_UnknownCookFailure` and `make`
+exits 25 — a **false** failure, since the cook did complete. **Re-run
+`package.sh`**: `Saved/Cooked` is reused and the second cook is incremental.
+`package.sh` detects this case and says so.
+
+Do not "fix" it by deleting `Saved/Cooked` — that throws away the work and the
+next cook starts from zero.

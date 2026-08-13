@@ -12,9 +12,6 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
-# shellcheck disable=SC1091
-source "${HERE}/activate_env.sh"
-
 RPC_PORT="${RPC_PORT:-2000}"
 MAP="${MAP:-/Game/Carla/Maps/Town02}"   # light map = fast first load (uncooked)
 RUN_SERVER="${HERE}/../../run-carla-server/scripts/run_server.sh"
@@ -29,7 +26,6 @@ RUN_SERVER="${HERE}/../../run-carla-server/scripts/run_server.sh"
   || { echo "[verify] ERROR: run-carla-server skill not found at ${RUN_SERVER}."; exit 1; }
 
 # Resolve the client interpreter (manager-agnostic) for the example client.
-carla_load_local_env "${CARLA_UE4_ROOT:-.}"
 carla_require_build_python || exit 1   # sets CARLA_PY_BIN
 
 echo "[verify] starting uncooked headless server via run-carla-server (map=${MAP})..."

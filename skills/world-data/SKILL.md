@@ -1,6 +1,6 @@
 ---
 name: world-data
-description: Queries the live CARLA world and resolves an entity description into a concrete actor id — find actors by type, role, or colour, or the single one nearest a point/actor; read the world snapshot; get static level bounding boxes by label; cast rays for semantic points; project a point to the ground. Identifies by stable attributes, not by any rank/order. Use when the user asks "what actors are here", "find the red prius", "the vehicle nearest the ego", "list the pedestrians", or needs a specific actor id for another skill.
+description: Queries the live CARLA world and resolves an entity description into a concrete actor id — find actors by type, role, or colour, or the single one nearest a point/actor; read the world snapshot; get static level bounding boxes by label; cast rays for semantic points; project a point to the ground; or (ros-topics) list the native ROS 2 topics each actor should be publishing and why any is silent. Identifies by stable attributes, not by any rank/order. Use when the user asks "what actors are here", "find the red prius", "the vehicle nearest the ego", "list the pedestrians", or needs a specific actor id for another skill.
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
@@ -73,7 +73,40 @@ python3 scripts/world_data.py snapshot                            # frame / time
 python3 scripts/world_data.py level-bbox --label TrafficSigns     # static boxes by label
 python3 scripts/world_data.py raycast --from=0,0,1 --to=50,0,1    # semantic hits along a ray
 python3 scripts/world_data.py ground --at=20,20,50               # drop to the ground
+python3 scripts/world_data.py ros-topics                          # ROS 2 topic tree per actor
 ```
+
+### Resolving ROS 2 topics (`ros-topics`)
+
+The same resolver job, one level up: it maps live actors to the topics the server
+**should** be publishing, and names the reason for each silent one. It needs no
+ROS 2 installation — it derives the names the way the server does, so it answers
+the half `ros2 topic list` cannot ("the topic is missing — why?").
+
+```
+world topics (exist whenever the server runs with --ros2):
+  rt/clock       [rosgraph_msgs/Clock]  every tick
+  rt/carla/map   [std_msgs/String]      OpenDRIVE, LATCHED, re-sent on map load
+  rt/tf          [tf2_msgs/TFMessage]   per registered actor, unless ros_publish_tf=false
+
+hero vehicle(s): 1
+  id=112 vehicle.lincoln.mkz_2017 ros_name=hero
+    <- rt/carla/hero/vehicle_control_cmd     [carla_msgs/CarlaEgoVehicleControl]
+    <- rt/carla/hero/ackermann_control_cmd   [ackermann_msgs/AckermannDriveStamped]
+
+sensors: 2
+  id=113 sensor.camera.rgb ros_name=front  [NOT enabled_for_ros -> SILENT]
+    -> rt/carla/hero/front/image        [sensor_msgs/Image]
+    -> rt/carla/hero/front/camera_info  [sensor_msgs/CameraInfo]
+  id=114 sensor.other.obstacle ros_name=actor114
+    (no native publisher for sensor.other.obstacle)
+```
+
+Three reasons an expected topic is absent, all visible above: the sensor is not
+`enable_for_ros()`-ed ([[create-sensor]] `ros --id N`), the sensor type has no
+publisher at all, or the vehicle is not `role_name = hero` (only the hero is
+registered). If even `rt/clock` is missing, the problem is upstream — the build
+or the launch flag ([[run-carla-server]] `ROS2=1`).
 
 ## Examples
 

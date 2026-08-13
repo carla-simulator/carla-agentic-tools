@@ -1,6 +1,6 @@
 ---
 name: control-vehicle
-description: Directly drives a specific vehicle on a running CARLA server — raw VehicleControl (throttle/steer/brake/reverse/hand-brake), Ackermann speed control, vehicle lights, opening/closing doors, and physics-control tuning. Targets the ego by default. Use when the user asks to "drive/steer the car", "accelerate/brake/reverse", "set a target speed", "turn on the headlights/blinkers/brake lights", "open a door", or "change the vehicle's mass/drag/physics". This is manual control (autopilot off) — for TM-driven traffic use control-traffic.
+description: Directly drives a specific vehicle on a running CARLA server — raw VehicleControl (throttle/steer/brake/reverse/hand-brake), Ackermann speed control, vehicle lights, opening/closing doors, and physics-control tuning; ros-info reports the native ROS 2 command topics (vehicle_control_cmd, ackermann_control_cmd) for the hero. Targets the ego by default. Use when the user asks to "drive/steer the car", "accelerate/brake/reverse", "set a target speed", "turn on the headlights/blinkers/brake lights", "open a door", "drive the car from ROS", or "change the vehicle's mass/drag/physics". This is manual control (autopilot off) — for TM-driven traffic use control-traffic.
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server with at least one vehicle. Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
@@ -63,7 +63,81 @@ python3 scripts/vehicle_control.py physics --mass 2200 --drag 0.4
 
 # emergency stop
 python3 scripts/vehicle_control.py stop
+
+# what ROS 2 topics drive this vehicle (read-only)
+python3 scripts/vehicle_control.py ros-info
 ```
+
+### Driving it from ROS 2
+
+On a server started with `--ros2` ([[run-carla-server]] `ROS2=1`), the **hero**
+vehicle exposes two command topics — the server subscribes, so the commands come
+from *outside* this skill:
+
+| Topic (DDS name) | Message | Maps to |
+|---|---|---|
+| `rt/carla/<ros_name>/vehicle_control_cmd` | `carla_msgs/CarlaEgoVehicleControl` | `carla.VehicleControl` (throttle, steer, brake, hand_brake, reverse, gear, manual_gear_shift) |
+| `rt/carla/<ros_name>/ackermann_control_cmd` | `ackermann_msgs/AckermannDriveStamped` | `carla.VehicleAckermannControl` (steering_angle, speed, acceleration, jerk) |
+
+`ros-info` prints them for the resolved vehicle plus a ready-to-run
+`ros2 topic pub` line, and says so plainly when the target **cannot** be driven
+from ROS: only `role_name = hero` gets subscribers (the server tests that string
+in `ActorDispatcher`), so ordinary traffic never does. Spawn the hero with
+[[spawn-vehicles]] `ego --ros-name <name>`.
+
+**You need the message definitions to publish.** Verified: neither type ships with
+a stock ROS 2 install, so `ros2 topic pub carla_msgs/msg/...` fails with an unknown
+type until you provide them:
+
+| Type | Where it comes from |
+|---|---|
+| `ackermann_msgs/AckermannDriveStamped` | `sudo apt install ros-$ROS_DISTRO-ackermann-msgs` |
+| `carla_msgs/CarlaEgoVehicleControl` | **not** an apt package — build `carla_msgs` from `carla-ros-bridge`, or hand-write a one-message package (below) |
+
+A minimal `carla_msgs` is enough and takes a minute — this exact recipe was used to
+drive the hero from ROS (0 → 64 km/h) on a packaged server:
+
+```bash
+mkdir -p ws/src/carla_msgs/msg
+cat > ws/src/carla_msgs/msg/CarlaEgoVehicleControl.msg <<'EOF'
+std_msgs/Header header
+float32 throttle
+float32 steer
+float32 brake
+bool hand_brake
+bool reverse
+int32 gear
+bool manual_gear_shift
+EOF
+# + a standard ament_cmake package.xml / CMakeLists.txt calling
+#   rosidl_generate_interfaces(${PROJECT_NAME} "msg/CarlaEgoVehicleControl.msg"
+#                              DEPENDENCIES std_msgs)
+colcon build --packages-select carla_msgs && source install/setup.bash
+ros2 topic pub -r 20 /carla/hero/vehicle_control_cmd \
+  carla_msgs/msg/CarlaEgoVehicleControl "{throttle: 0.8}"
+```
+
+**Field order is the contract**, not the field names: CDR is positional, so the
+`.msg` must list exactly those eight fields in that order to match CARLA's POD.
+The package name and message name must be `carla_msgs` / `CarlaEgoVehicleControl`
+so the DDS type name (`carla_msgs::msg::dds_::CarlaEgoVehicleControl_`) matches.
+
+Publishing from a container? Add `-e HOME=/tmp` — with `--user` and no writable
+`HOME`, `rcl` aborts at startup with `Failed to create log directory: //.ros/log`.
+
+The server side needs none of this: `ros-info` confirms the subscription exists
+(`Subscription count: 1`) regardless, and the type name resolves from DDS.
+
+Two things that bite:
+
+- **Both paths write the same `VehicleControl`.** A ROS publisher sending at 20 Hz
+  and this skill's `control` fight; last writer wins. Pick one driver.
+- **Autopilot still overrides manual input.** ROS commands are manual input, so
+  the TM must be off for them to have any effect (`control`/`ackermann` here
+  disable it for you; a ROS-only workflow must not enable it).
+
+A ROS 2 installation is needed only to *publish* — nothing in this skill requires
+one ([[visualize-ros-rviz]] has containers if the host has no ROS 2).
 
 ### Step 4: Verify
 

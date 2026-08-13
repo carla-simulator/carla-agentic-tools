@@ -1,12 +1,13 @@
 ---
 name: run-carla-server
-description: Launches a CARLA RPC server (ue4-dev) a carla.Client can connect to — headless -nullrhi from uncooked content, windowed with real rendering, or a cooked Dist package — and shuts it down cleanly. Use when the user asks to "run/start the CARLA server", "boot CARLA headless", "launch CARLA with a window", or "serve a packaged CARLA build".
+description: Launches a CARLA RPC server (ue4-dev) a carla.Client can connect to — headless -nullrhi from uncooked content, windowed with real rendering, or a cooked Dist package — and shuts it down cleanly. ROS2=1 starts it with the native ROS 2 interface active (--ros2, --rmw=fastdds/cyclonedds/zenoh, --ros-domain-id). Use when the user asks to "run/start the CARLA server", "boot CARLA headless", "launch CARLA with a window", "start CARLA with ROS2 enabled", or "serve a packaged CARLA build".
 license: MIT
 compatibility: Linux. Requires a build produced by build-carla-ue4 — UE4Editor + fetched content for the uncooked modes, or a Dist/ package for PACKAGED=1. WINDOW=1 needs an X display + NVIDIA GPU. The verify client needs an active CARLA client env (venv, conda, or system — no manager assumed).
 metadata:
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
   reference: references/lessons.md
+  ros2: references/ros2.md
 ---
 
 # Run a CARLA server
@@ -71,6 +72,62 @@ until nc -z 127.0.0.1 2000; do sleep 1; done     # poll, don't sleep blindly
 pkill -x UE4Editor                                # clean stop (see S3!)
 ```
 
+## ROS 2 native interface (`ROS2=1`, opt-in)
+
+Orthogonal to the three modes above — it composes with all of them:
+
+```bash
+ROS2=1 bash scripts/run_server.sh                          # fastdds, domain 0
+ROS2=1 RMW=zenoh ROS_DOMAIN_ID=5 bash scripts/run_server.sh
+PACKAGED=1 ROS2=1 bash scripts/run_server.sh               # cooked, sensors work
+```
+
+Adds `--ros2 [--rmw=<v>] [--ros-domain-id=<n>]` to the launched binary, so the
+server publishes DDS topics itself (no `carla-ros-bridge`). Four things decide
+whether you see anything:
+
+1. **The binary must be BUILT with ROS 2** — `--ros2` on a plain build is a
+   silent no-op. `check_env.sh` reads `Config/OptionalModules.ini` and FAILs when
+   `ROS2=1` meets a `Ros2 OFF` checkout. Build it with [[build-carla-ue4]]
+   `ROS2=1`, cook it with [[package-carla-ue4]] `ROS2=1`.
+2. **`RMW=`** — `fastdds` (default) · `cyclonedds` · `zenoh`. A bad or
+   not-compiled-in value **disables ROS 2 for the session** with a log line, it
+   does not fail the boot. `zenoh` also needs a router (`rmw_zenohd`) started
+   first. `fastdds` and `cyclonedds` **interoperate** — verified: a
+   `rmw_fastrtps_cpp` subscriber reads a `--rmw=cyclonedds` server at the same
+   rate as a native one, since both speak RTPS. Only `zenoh` is a separate
+   protocol and must match on both sides.
+3. **The domain must match** the subscriber side (`ROS_DOMAIN_ID`, 0..232, CLI →
+   env → 0). A mismatch is indistinguishable from a broken build: no topics, no
+   error. Verified both ways: on the server's domain the topics appear, on any
+   other domain nothing does.
+
+**Restarting: wait for the port, and mind the process name.** The packaged
+server's `comm` is truncated to 15 characters, so `pkill -x
+CarlaUE4-Linux-Shipping` matches **nothing** and the old server keeps port 2000.
+The next launch then dies with `bind: Address already in use` → `Signal 11`, which
+reads like a rendering crash and is not one. Verified — use:
+
+```bash
+pkill -x CarlaUE4-Linux-                              # the truncated name
+until ! nc -z 127.0.0.1 2000; do sleep 1; done        # THEN wait for release
+```
+4. **`-nullrhi` still has no cameras.** Non-image sensors (lidar, IMU, GNSS,
+   collision), `rt/clock`, `rt/tf` and `rt/carla/map` publish in every mode;
+   camera topics need `WINDOW=1` or `PACKAGED=1`, same rule as the RPC path.
+
+Sensors also need `enable_for_ros()` to publish at all ([[create-sensor]] `--ros`).
+Readiness is two-stage — RPC port, then topics:
+
+```bash
+until nc -z 127.0.0.1 2000; do sleep 1; done      # RPC
+ros2 topic list | grep -E '/clock|/carla/map'      # ROS (from a ROS 2 env)
+```
+
+No ROS 2 installed here: verify from a container ([[visualize-ros-rviz]]) or
+RPC-side with [[world-data]] `ros-topics`. Full flag semantics, zenoh router and
+failure table: [`references/ros2.md`](references/ros2.md).
+
 ## Reference
 
 - **Map choice:** light maps (Town01/Town02) minimise first-load time. Uncooked
@@ -81,7 +138,7 @@ pkill -x UE4Editor                                # clean stop (see S3!)
 - **Readiness:** the RPC port opening is the signal; log line
   `LogCarlaServer: Initialized CarlaServer` appears at the same time.
 - **Shutdown:** `pkill -x UE4Editor` (uncooked) /
-  `pkill -x CarlaUE4-Linux-Shipping` (packaged). **Never**
+  `pkill -x CarlaUE4-Linux-` (packaged — **not** `...-Shipping`, see below). **Never**
   `pkill -f CarlaUE4.uproject` — it kills your own shell (S3).
 
 ## Verify
@@ -108,7 +165,7 @@ Solution: use the default `-nullrhi` mode (no render thread), or `WINDOW=1`
 
 **Error: stopping the server killed the calling shell (exit 144)**
 Cause: `pkill -f CarlaUE4.uproject` matches the launching shell's own args (S3).
-Solution: `pkill -x UE4Editor` (uncooked) or `pkill -x CarlaUE4-Linux-Shipping`
+Solution: `pkill -x UE4Editor` (uncooked) or `pkill -x CarlaUE4-Linux-`
 (packaged) — exact process names.
 
 **Error: client connects after a fixed sleep but times out**
