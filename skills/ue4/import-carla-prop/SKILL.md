@@ -4,6 +4,7 @@ description: Imports FBX meshes into a CARLA source build as spawnable static.pr
 license: MIT
 compatibility: Linux. Requires a built CarlaUnreal UE 4.26 fork (UE4_ROOT) and a built CARLA checkout — this skill checks for both and defers to build-carla-ue4, it never builds. Importing needs no Python environment; verifying needs one that imports `carla`. A whole directory is one editor boot, a couple of minutes.
 metadata:
+  group: ue4
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
   reference: references/props.md

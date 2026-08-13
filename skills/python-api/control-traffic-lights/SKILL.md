@@ -4,6 +4,7 @@ description: Controls the traffic-light actors on a running CARLA server — set
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/traffic-lights.md
 ---

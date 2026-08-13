@@ -4,6 +4,7 @@ description: Tunes the CARLA Traffic Manager that drives autopilot vehicles — 
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server with autopilot vehicles (spawn-vehicles). Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/traffic-manager.md
 ---

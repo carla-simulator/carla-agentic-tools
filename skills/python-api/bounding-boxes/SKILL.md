@@ -4,6 +4,7 @@ description: Gets actor and level 3D bounding boxes and projects them into a cam
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI + numpy (cv2 for drawing) installed for the active interpreter and a reachable, already-running CARLA server. `project` needs an RGB camera (create-sensor). Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   requires: create-sensor
   prerequisites: scripts/check_env.sh
   reference: references/bounding-boxes.md

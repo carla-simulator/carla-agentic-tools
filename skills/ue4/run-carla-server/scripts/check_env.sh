@@ -11,23 +11,33 @@ ok(){   echo "  PASS $*"; }
 warn(){ echo "  WARN $*"; }
 bad(){  echo "  FAIL $*"; rc=1; }
 
-echo "== Uncooked modes (default / WINDOW=1) =="
-[ -x "${UE4_ROOT}/Engine/Binaries/Linux/UE4Editor" ] \
-  && ok "UE4Editor built" || bad "UE4Editor missing — run build-carla-ue4 step 03"
-[ -f "${CARLA_UE4_ROOT}/Unreal/CarlaUE4/CarlaUE4.uproject" ] \
-  && ok "CarlaUE4.uproject present" || bad "CarlaUE4.uproject missing"
-CONTENT="${CARLA_UE4_ROOT}/Unreal/CarlaUE4/Content/Carla"
-# -L: Content/Carla may be a symlink to a shared content checkout.
-if [ -d "${CONTENT}/.git" ] && [ -n "$(find -L "${CONTENT}" -mindepth 1 -maxdepth 1 ! -name '.git' -print -quit 2>/dev/null)" ]; then
-  ok "Content/Carla populated (maps available)"
-else
-  bad "Content/Carla missing/incomplete — run build-carla-ue4 step 05"
-fi
+echo "== What will be run (detected) =="
+read -r MODE LAUNCH <<<"$(carla_detect_target)"
+case "${MODE}" in
+  package) ok "extracted release -> ${LAUNCH} (no UE4 needed, renders for real)";;
+  dist)    ok "cooked package in a checkout -> ${LAUNCH} (no UE4 needed, renders for real)";;
+  editor)  ok "source checkout -> ${LAUNCH} (launches UE4Editor; needs UE4_ROOT)";;
+  invalid) bad "${LAUNCH} was named explicitly (CARLA_TARGET/CARLA_PACKAGE_ROOT) but holds no CARLA build";;
+  none)    bad "nothing runnable found — set CARLA_TARGET to an extracted release or a checkout";;
+esac
 
-echo "== Packaged mode (PACKAGED=1) =="
-PKG="$(ls -1dt "${CARLA_UE4_ROOT}"/Dist/CARLA_*/LinuxNoEditor 2>/dev/null | head -1)"
-[ -n "${PKG}" ] && ok "package found: ${PKG}" \
-  || warn "no Dist/ package — PACKAGED=1 unavailable until build step 06 (make package); uncooked modes unaffected"
+# Only the editor path needs the engine and the raw content tree; a cooked build
+# carries everything it needs, which is why these are checked per-mode.
+if [ "${MODE}" = "editor" ]; then
+  echo "== Editor requirements =="
+  [ -x "${UE4_ROOT}/Engine/Binaries/Linux/UE4Editor" ] \
+    && ok "UE4Editor built" || bad "UE4Editor missing — run build-carla-ue4 step 03"
+  CONTENT="${LAUNCH}/Unreal/CarlaUE4/Content/Carla"
+  # -L: Content/Carla may be a symlink to a shared content checkout.
+  if [ -d "${CONTENT}/.git" ] && [ -n "$(find -L "${CONTENT}" -mindepth 1 -maxdepth 1 ! -name '.git' -print -quit 2>/dev/null)" ]; then
+    ok "Content/Carla populated (maps available)"
+  else
+    bad "Content/Carla missing/incomplete — run build-carla-ue4 step 05"
+  fi
+  PKG="$(ls -1dt "${LAUNCH}"/Dist/CARLA_*/LinuxNoEditor 2>/dev/null | head -1)"
+  [ -n "${PKG}" ] && ok "a cooked package also exists: ${PKG}" \
+    || warn "no cooked package in this checkout — camera/lidar images need one (package-carla-ue4), or use WINDOW=1"
+fi
 
 echo "== ROS 2 native interface (ROS2=${ROS2}) =="
 if [ "${ROS2}" != "1" ]; then
@@ -63,7 +73,11 @@ fi
 
 echo "== Ports / display =="
 if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 2000 2>/dev/null; then
-  warn "port 2000 already in use — a server is running; pass a different RPC_PORT or stop it (pkill -x UE4Editor)"
+  warn "port 2000 is in use — ANOTHER CARLA SERVER IS ALREADY RUNNING"
+  warn "  either stop it:  pkill -x UE4Editor  (editor)  /  pkill -x CarlaUE4-Linux-  (packaged)"
+  warn "                   then: until ! nc -z 127.0.0.1 2000; do sleep 1; done"
+  warn "  or run on other ports:  bash scripts/run_server.sh <MAP> 3000  (+ CARLA_PORT=3000 for clients)"
+  warn "  launching anyway fails with 'bind: Address already in use' then Signal 11 — run_server.sh refuses first"
 else
   ok "default RPC port 2000 free"
 fi

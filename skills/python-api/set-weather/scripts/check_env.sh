@@ -11,12 +11,13 @@ source "${HERE}/env.sh" >/dev/null
 import sys
 
 def fail(m): print(f"FAIL  {m}")
+def warn(m): print(f"WARN  {m}")
 def ok(m):   print(f"PASS  {m}")
 
 try:
     import carla
 except Exception as e:
-    fail(f"cannot import carla — install the PythonAPI wheel for this interpreter ({e})")
+    fail(f"cannot import carla — run the install-python-api skill for this interpreter ({e})")
     print("\nprerequisites BLOCKED — resolve FAIL lines above")
     sys.exit(1)
 ok("carla module importable")
@@ -25,7 +26,14 @@ host, port = sys.argv[1], int(sys.argv[2])
 try:
     client = carla.Client(host, port)
     client.set_timeout(4.0)  # short: a healthy local server answers in <1s
-    ok(f"server reachable at {host}:{port} (server {client.get_server_version()})")
+    sv, cv = client.get_server_version(), client.get_client_version()
+    ok(f"server reachable at {host}:{port} (server {sv}, client {cv})")
+    if sv != cv:
+        # Not cosmetic: a mismatched client can abort mid-call
+        # (std::bad_array_new_length) when deserialising snapshots or sensor data.
+        warn(f"client/server version MISMATCH: client {cv} vs server {sv}")
+        warn("  structured calls may abort — install a matching client with the"
+             " install-python-api skill (its bundled-wheel source guarantees a match)")
     w = client.get_world().get_weather()
     ok(f"current weather readable (cloudiness={w.cloudiness}, precipitation={w.precipitation})")
 except Exception as e:

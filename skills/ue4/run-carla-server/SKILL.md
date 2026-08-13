@@ -1,9 +1,10 @@
 ---
 name: run-carla-server
-description: Launches a CARLA RPC server (ue4-dev) a carla.Client can connect to — headless -nullrhi from uncooked content, windowed with real rendering, or a cooked Dist package — and shuts it down cleanly. ROS2=1 starts it with the native ROS 2 interface active (--ros2, --rmw=fastdds/cyclonedds/zenoh, --ros-domain-id). Use when the user asks to "run/start the CARLA server", "boot CARLA headless", "launch CARLA with a window", "start CARLA with ROS2 enabled", or "serve a packaged CARLA build".
+description: Launches a CARLA RPC server a carla.Client can connect to, working out for itself what you pointed it at — a downloaded/extracted release, a package cooked inside a checkout, or a source checkout run through the UE4 editor — headless or windowed, and shuts it down cleanly. ROS2=1 starts it with the native ROS 2 interface active (--ros2, --rmw=fastdds/cyclonedds/zenoh, --ros-domain-id). Use when the user asks to "run/start the CARLA server", "boot CARLA headless", "launch CARLA with a window", "run the CARLA I downloaded", "start CARLA with ROS2 enabled", or "serve a packaged CARLA build".
 license: MIT
-compatibility: Linux. Requires a build produced by build-carla-ue4 — UE4Editor + fetched content for the uncooked modes, or a Dist/ package for PACKAGED=1. WINDOW=1 needs an X display + NVIDIA GPU. The verify client needs an active CARLA client env (venv, conda, or system — no manager assumed).
+compatibility: Linux. Needs one of: an extracted CARLA release (nothing else required), a Dist/ package from package-carla-ue4, or a source checkout plus UE4_ROOT and fetched content for editor mode. WINDOW=1 needs an X display + NVIDIA GPU. The verify client needs an active CARLA client env with a matching `carla` version (install-python-api sets that up).
 metadata:
+  group: ue4
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
   reference: references/lessons.md
@@ -17,14 +18,42 @@ content ([[add-carla-vehicle]]), run traffic scenarios, or feed the MCP's
 live-simulator tools. It is NOT for asset editing — that is [[ue4-editor-python]]
 (editor commandlet, no RPC).
 
-The central trade-off (build-carla-ue4 L17): **uncooked** content has no mesh
-distance fields, so the real renderer crashes headless — hence three modes:
+## Point it at a CARLA; it works out the rest
 
-| Mode | Command | Rendering | Sensors | Cook needed |
-|------|---------|-----------|---------|-------------|
-| default | `bash scripts/run_server.sh` | none (`-nullrhi`) | NO images | no |
-| `WINDOW=1` | `WINDOW=1 bash scripts/run_server.sh` | real, windowed, DF off | on-screen only | no |
-| `PACKAGED=1` | `PACKAGED=1 bash scripts/run_server.sh` | real (`-RenderOffScreen`) | camera/lidar work | yes (build step 06) |
+You name **one path**, the skill detects which of the three shapes it is and
+launches accordingly:
+
+| Detected | What it found | Rendering | Needs UE4_ROOT |
+|---|---|---|---|
+| `package` | `<path>/CarlaUE4.sh` — a downloaded/extracted release | real | no |
+| `dist` | `<path>/Dist/CARLA_*/LinuxNoEditor/CarlaUE4.sh` — cooked in a checkout | real | no |
+| `editor` | `<path>/Unreal/CarlaUE4/CarlaUE4.uproject` — a source checkout | none (`-nullrhi`) or windowed | **yes** |
+
+```bash
+CARLA_TARGET=~/CARLA_0.9.16 bash scripts/run_server.sh      # a download
+CARLA_UE4_ROOT=~/carla      bash scripts/run_server.sh      # a checkout
+DETECT=1 CARLA_TARGET=~/CARLA_0.9.16 bash scripts/run_server.sh   # report, launch nothing
+```
+
+Resolution order is `CARLA_TARGET` → `CARLA_PACKAGE_ROOT` → `CARLA_UE4_ROOT` →
+`$PWD`, and a path you name **explicitly** that holds no CARLA is an error, never
+a silent fallback to a different install.
+
+A checkout that has cooked a package can be run either way, so detection prefers
+the cooked build (it renders properly and boots faster). Force the choice with
+`RUN_MODE`:
+
+| Knob | Effect |
+|---|---|
+| `RUN_MODE=auto` | default — cooked build if present, else editor |
+| `RUN_MODE=package` | only a cooked build; error if there is none (`PACKAGED=1` is the old spelling) |
+| `RUN_MODE=editor` | run the source checkout through UE4Editor even if a package exists |
+| `WINDOW=1` | windowed instead of headless — works for both cooked builds and the editor |
+
+The editor caveat (build-carla-ue4 L17): **uncooked** content has no mesh distance
+fields, so the real renderer crashes headless. That is why `editor` mode defaults
+to `-nullrhi` (no images at all) and `WINDOW=1` disables DF generation. For camera
+and lidar images, run a cooked build.
 
 **Boot time is tens of seconds, not a fixed number** — measured here on Town02
 headless: ~38 s cold (32 s of it `LoadMap`), less when warm; heavy maps and a
@@ -52,8 +81,9 @@ Run Progress:
 - Roots resolve via `scripts/env.sh` (both overridable): `UE4_ROOT` (uncooked
   modes launch the editor) and `CARLA_UE4_ROOT` (the checkout to serve). Export
   them, or run from inside the checkout.
-- Uncooked modes: UE4 built + content fetched ([[build-carla-ue4]] steps 03, 05).
-- `PACKAGED=1`: a `Dist/CARLA_*` package ([[build-carla-ue4]] step 06, `make package`).
+- `editor` mode only: UE4 built + content fetched ([[build-carla-ue4]] steps 03, 05).
+- A cooked build: either an extracted release (`CARLA_TARGET`) or `Dist/CARLA_*`
+  from [[package-carla-ue4]]. Needs no UE4_ROOT and no content checkout.
 - Verify client: any active CARLA client env (the wheel installed by build step
   04); no manager is assumed.
 
@@ -63,8 +93,8 @@ Run Progress:
 cd skills/run-carla-server
 bash scripts/check_env.sh
 
-# headless smoke-test server, backgrounded
-bash scripts/run_server.sh >/tmp/carla_server.log 2>&1 &
+# headless smoke-test server, backgrounded DETACHED (see the note below)
+setsid nohup bash scripts/run_server.sh </dev/null >/tmp/carla_server.log 2>&1 &
 until nc -z 127.0.0.1 2000; do sleep 1; done     # poll, don't sleep blindly
 
 # ... use it (spawn_test.py, MCP tools, any carla.Client) ...
@@ -79,7 +109,7 @@ Orthogonal to the three modes above — it composes with all of them:
 ```bash
 ROS2=1 bash scripts/run_server.sh                          # fastdds, domain 0
 ROS2=1 RMW=zenoh ROS_DOMAIN_ID=5 bash scripts/run_server.sh
-PACKAGED=1 ROS2=1 bash scripts/run_server.sh               # cooked, sensors work
+CARLA_TARGET=~/CARLA_0.9.16 ROS2=1 bash scripts/run_server.sh   # a download, sensors work
 ```
 
 Adds `--ros2 [--rmw=<v>] [--ros-domain-id=<n>]` to the launched binary, so the
@@ -156,6 +186,11 @@ ever opened.
 
 ## Troubleshooting
 
+**Error: server dies right after the port opens, log ends `close: Bad file descriptor` + Signal 11**
+Cause: it was backgrounded with a plain `&`, so it inherited the launching shell's
+stdin and died when that shell exited. Not a rendering fault (verified).
+Solution: `setsid nohup bash scripts/run_server.sh </dev/null >log 2>&1 &`.
+
 **Error: server SIGSEGVs seconds after opening the RPC port (uncooked)**
 Cause: the real renderer dereferences a null mesh distance field — uncooked
 content has none (S1).
@@ -173,10 +208,16 @@ Cause: it raced first-load shader compilation; boot time varies (S4).
 Solution: poll the port — `until nc -z 127.0.0.1 <port>; do sleep 1; done`. Use
 `nc -z` / `ss -ltn`, not the bash `/dev/tcp` idiom (fails under zsh, S4).
 
-**Error: `no Dist/ package` with `PACKAGED=1`**
-Cause: no cooked package exists.
-Solution: run [[build-carla-ue4]] step 06 (`make package`), or use an uncooked
-mode.
+**Error: `nothing runnable found` / `named explicitly but holds no CARLA build`**
+Cause: no path resolved to a release, a cooked package, or a checkout — or the path
+you named is not a CARLA install.
+Solution: the error lists the three shapes it looked for. Set `CARLA_TARGET` to an
+extracted release, or cook one ([[package-carla-ue4]]), or point at a checkout with
+`UE4_ROOT` set for editor mode. `DETECT=1` shows what a given path resolves to.
+
+**Error: `RUN_MODE=package found no matching build`**
+Cause: only a source checkout is present.
+Solution: cook a package, or drop `RUN_MODE`/`PACKAGED=1` to run the editor.
 
 ## Outputs
 

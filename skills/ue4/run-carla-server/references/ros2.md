@@ -50,7 +50,8 @@ local shell.
 ROS2=1 bash scripts/run_server.sh                       # fastdds, default domain
 ROS2=1 RMW=cyclonedds bash scripts/run_server.sh
 ROS2=1 RMW=zenoh ROS_DOMAIN_ID=5 bash scripts/run_server.sh
-PACKAGED=1 ROS2=1 bash scripts/run_server.sh            # cooked package
+CARLA_TARGET=~/CARLA_0.9.16 ROS2=1 bash scripts/run_server.sh   # a downloaded release
+PACKAGED=1 ROS2=1 bash scripts/run_server.sh            # a package cooked in the checkout
 ```
 
 They become `--ros2 [--rmw=<v>] [--ros-domain-id=<n>]` on the server's own

@@ -4,6 +4,7 @@ description: Builds CARLA (branch ue4-dev, Unreal Engine 4.26) from source on Li
 license: MIT
 compatibility: Linux x86_64 (Ubuntu 20.04/22.04/24.04). Requires an Epic-linked GitHub account (the UE4 fork is private), ~120 GB free disk, an NVIDIA GPU for the rendering server, and an active Python client env (venv, conda, or system — no manager assumed). A full build takes several hours.
 metadata:
+  group: ue4
   prerequisites: scripts/check_env.sh
   reference: references/lessons.md
   ros2: references/ros2.md

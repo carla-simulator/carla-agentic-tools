@@ -4,6 +4,7 @@ description: Imports an FBX vehicle into a CARLA source build as a spawnable veh
 license: MIT
 compatibility: Linux. Requires a built CarlaUnreal UE 4.26 fork (UE4_ROOT), a built CARLA checkout, and CarlaTools built WITH VehicleAuthoringLibrary (CARLA PR #9805) — this skill checks all three and defers to build-carla-ue4, it never builds. Importing needs no Python environment; verifying needs one that imports `carla`. Two full editor boots, roughly 8-12 minutes.
 metadata:
+  group: ue4
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
   reference: references/vehicle_import.md

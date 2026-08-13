@@ -4,6 +4,7 @@ description: Explores a CARLA map's road network through the Map/Waypoint API â€
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Drawing needs a rendered view; text queries work headless. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/waypoints.md
 ---

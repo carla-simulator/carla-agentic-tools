@@ -4,6 +4,7 @@ description: Inspects and visualises a ROS-2-enabled CARLA server from Docker co
 license: MIT
 compatibility: Linux with Docker (daemon reachable) and a running CARLA server that was BUILT and STARTED with ROS 2. Needs no local ROS 2 installation — the ros2 CLI and RViz run in containers built on first use (network required, minutes). The rviz mode needs an X display; everything else works headless. Building the demo image needs a matching carla wheel (cp310 for humble, cp312 for jazzy) in PythonAPI/carla/dist.
 metadata:
+  group: ros2
   requires: run-carla-server
   prerequisites: scripts/check_env.sh
   reference: references/ros-consumers.md

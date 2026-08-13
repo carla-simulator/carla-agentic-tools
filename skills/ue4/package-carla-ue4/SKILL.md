@@ -4,6 +4,7 @@ description: Cooks and packages CarlaUE4 into distributable tarballs under Dist/
 license: MIT
 compatibility: Linux. Requires a built CarlaUnreal UE 4.26 checkout (UE4_ROOT), a carla ue4-dev source checkout, an active Python env whose `python3` imports `build` + `carla` (venv, conda or system — no manager assumed), and ~30 GB free disk. A full release takes 30-90 minutes.
 metadata:
+  group: ue4
   prerequisites: scripts/check_env.sh
   reference: references/packaging.md
 ---

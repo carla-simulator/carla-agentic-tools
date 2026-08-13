@@ -4,6 +4,7 @@ description: Drives a vehicle to a destination autonomously using CARLA's naviga
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed and the CARLA checkout's PythonAPI/carla/agents on PYTHONPATH (env.sh sets it from CARLA_ROOT), plus a reachable running server with a target vehicle. Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/navigation.md
 ---

@@ -4,6 +4,7 @@ description: Moves the CARLA spectator camera, frames an actor, or follows one l
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Only meaningful on a rendered server (the spectator is the on-screen view). Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/spectator.md
 ---

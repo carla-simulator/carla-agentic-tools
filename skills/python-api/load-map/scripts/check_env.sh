@@ -21,7 +21,7 @@ def ok(msg):   print(f"PASS  {msg}")
 try:
     import carla
 except Exception as e:
-    fail(f"cannot import carla — install the PythonAPI wheel for this interpreter ({e})")
+    fail(f"cannot import carla — run the install-python-api skill for this interpreter ({e})")
     print("\nprerequisites BLOCKED — resolve FAIL lines above")
     sys.exit(1)
 ok("carla module importable")

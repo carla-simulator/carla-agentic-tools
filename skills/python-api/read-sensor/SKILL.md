@@ -4,6 +4,7 @@ description: Listens to a CARLA sensor and either saves its data to files, shows
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI, numpy, and (for windows) pygame installed for the active interpreter, and a reachable running CARLA server with a sensor. A window needs a display; saving/summary work headless. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   requires: create-sensor
   prerequisites: scripts/check_env.sh
   reference: references/read-sensor.md

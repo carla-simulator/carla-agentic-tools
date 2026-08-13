@@ -4,6 +4,7 @@ description: Imports a custom RoadRunner map (FBX geometry + XODR OpenDRIVE) int
 license: MIT
 compatibility: Linux. Requires a built CarlaUnreal UE 4.26 fork (UE4_ROOT), a built CARLA checkout, and a python that can `import carla` — Import.py runs in-process. Compiles nothing; defers to build-carla-ue4. A standard map is one editor boot (~minutes); a large map scales with tile count. The pedestrian navmesh needs Blender 3.3+ and is standard-maps-only.
 metadata:
+  group: ue4
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
   reference: references/maps.md

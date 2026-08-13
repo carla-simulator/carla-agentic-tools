@@ -4,6 +4,7 @@ description: Lists and toggles a map's static environment objects via get_enviro
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Visual effect needs a rendered view; listing/toggling work headless. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/env-objects.md
 ---

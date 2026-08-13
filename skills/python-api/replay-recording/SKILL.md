@@ -4,6 +4,7 @@ description: Replays a CARLA .log recorded by the recorder — the whole run or 
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Needs a .log on the server (from the record-simulation skill). Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   requires: record-simulation
   prerequisites: scripts/check_env.sh
   reference: references/replay.md

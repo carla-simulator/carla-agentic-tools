@@ -4,6 +4,7 @@ description: Adds a new topic to CARLA's native ROS 2 interface — a publisher 
 license: MIT
 compatibility: A CARLA checkout whose LibCarla/source/carla/ros2 exists (native ROS 2 branch) and the toolchain to build LibCarla with --ros2 plus the UE4 plugin. Editing only. Proving a new topic on the wire needs a ROS 2 consumer (visualize-ros-rviz) and a server built with ROS 2.
 metadata:
+  group: ros2
   requires: add-ros-message-type
   prerequisites: scripts/check_env.sh
   reference: references/layers.md
@@ -112,7 +113,7 @@ if (ROS2->IsEnabled()) {
 
 ```bash
 bash scripts/verify.sh                          # LibCarla + its tests, with --ros2
-ROS2=1 bash ../build-carla-ue4/scripts/06_build_editor.sh   # the plugin call site
+ROS2=1 bash ../../ue4/build-carla-ue4/scripts/06_build_editor.sh   # the plugin call site
 # then, against a running ROS 2 server:
 bash ../visualize-ros-rviz/scripts/ros_view.sh topics
 bash ../visualize-ros-rviz/scripts/ros_view.sh hz /carla/<actor>/foo

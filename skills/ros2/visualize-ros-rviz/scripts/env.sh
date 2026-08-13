@@ -29,7 +29,7 @@ fi
 # Precedence: explicit CARLA_UE4_ROOT > $PWD if it is a checkout > path-derived
 # guess (only meaningful when this repo was dropped INTO a checkout).
 _SKILL_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../.." && pwd)"
+_DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../../.." && pwd)"
 _UPROJECT_REL="Unreal/CarlaUE4/CarlaUE4.uproject"
 
 if [ -z "${CARLA_UE4_ROOT:-}" ]; then

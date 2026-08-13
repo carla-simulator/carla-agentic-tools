@@ -33,7 +33,7 @@ fi
 # Precedence: explicit CARLA_UE4_ROOT  >  $PWD if it is a checkout  >  the
 # path-derived guess (only meaningful when this repo was dropped INTO a checkout).
 _SKILL_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../.." && pwd)"
+_DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../../.." && pwd)"
 _UPROJECT_REL="Unreal/CarlaUE4/CarlaUE4.uproject"
 
 if [ -z "${CARLA_UE4_ROOT:-}" ]; then
@@ -47,8 +47,75 @@ export CARLA_UE4_ROOT="${CARLA_UE4_ROOT:-}"
 
 # UE4_ROOT has no derivable default from a standalone repo — export it, or let
 # check_env.sh fail loudly with the path it looked for. Only the uncooked modes
-# (default / WINDOW=1) need it; PACKAGED=1 runs from Dist/ without it.
+# (default / WINDOW=1) need it; a package runs without it.
 export UE4_ROOT="${UE4_ROOT:-}"
+
+# --- What are we being asked to run? ----------------------------------------
+# The user names ONE path and the skill works out what it is. Three shapes exist:
+#
+#   package   an extracted release: <path>/CarlaUE4.sh          (no UE4 needed)
+#   dist      a checkout that cooked one: <path>/Dist/CARLA_*/LinuxNoEditor/CarlaUE4.sh
+#   editor    a source checkout: <path>/Unreal/CarlaUE4/CarlaUE4.uproject (needs UE4_ROOT)
+#
+# CARLA_TARGET accepts any of the three; CARLA_PACKAGE_ROOT names a release
+# explicitly; CARLA_UE4_ROOT keeps its old meaning (a checkout). Detection order
+# below prefers the most specific thing the user pointed at.
+export CARLA_TARGET="${CARLA_TARGET:-}"
+export CARLA_PACKAGE_ROOT="${CARLA_PACKAGE_ROOT:-}"
+
+# Echoes "<mode> <path-to-launch>" where mode is package|dist|editor, or
+# "none ." when nothing runnable was found, or "invalid <path>" when a path the
+# user named explicitly holds no CARLA. `path` is the CarlaUE4.sh for
+# package/dist and the checkout root for editor.
+#
+# $1 restricts what counts as a hit: "package" ignores source checkouts, "editor"
+# ignores cooked builds. Needed because a checkout that has cooked a package can
+# be run either way, and detection alone cannot know which the user meant.
+carla_detect_target() {
+  local want="${1:-auto}"
+  # Literal, not ${_UPROJECT_REL}: that variable is unset at the end of this file,
+  # and this function runs later, from the caller.
+  local uproject="Unreal/CarlaUE4/CarlaUE4.uproject"
+  local cand explicit
+  # An EXPLICIT target that turns out to hold no CARLA is an error, not a reason to
+  # quietly run something else: silently serving a different build than the user
+  # named is the worst outcome available here.
+  for explicit in "${CARLA_TARGET}" "${CARLA_PACKAGE_ROOT}"; do
+    [ -n "${explicit}" ] || continue
+    if [ ! -d "${explicit}" ]; then echo "invalid ${explicit}"; return 0; fi
+  done
+  for cand in "${CARLA_TARGET}" "${CARLA_PACKAGE_ROOT}" "${CARLA_UE4_ROOT}" "${PWD}"; do
+    [ -n "${cand}" ] || continue
+    [ -d "${cand}" ] || continue
+    # A standalone release: the launcher sits at the top level.
+    if [ "${want}" != "editor" ] && [ -x "${cand}/CarlaUE4.sh" ]; then
+      echo "package ${cand}/CarlaUE4.sh"; return 0
+    fi
+    # Some releases keep the LinuxNoEditor/ subdir when extracted.
+    if [ "${want}" != "editor" ] && [ -x "${cand}/LinuxNoEditor/CarlaUE4.sh" ]; then
+      echo "package ${cand}/LinuxNoEditor/CarlaUE4.sh"; return 0
+    fi
+    # A checkout that has cooked its own package (newest wins).
+    local pkg
+    pkg="$(ls -1dt "${cand}"/Dist/CARLA_*/LinuxNoEditor/CarlaUE4.sh 2>/dev/null | head -1 || true)"
+    if [ "${want}" != "editor" ] && [ -n "${pkg}" ] && [ -x "${pkg}" ]; then
+      echo "dist ${pkg}"; return 0
+    fi
+    # A source checkout: run the editor.
+    if [ "${want}" != "package" ] && [ -f "${cand}/${uproject}" ]; then
+      echo "editor ${cand}"; return 0
+    fi
+    # Reached only when this candidate held nothing runnable. If the user named it
+    # explicitly, stop here instead of falling through to another install.
+    for explicit in "${CARLA_TARGET}" "${CARLA_PACKAGE_ROOT}"; do
+      if [ -n "${explicit}" ] && [ "${cand}" = "${explicit}" ]; then
+        echo "invalid ${cand}"; return 0
+      fi
+    done
+  done
+  echo "none ."
+  return 0
+}
 
 # --- ROS 2 native interface (opt-in, runtime) -------------------------------
 # ROS2=1 starts the server with `--ros2`, so it publishes DDS topics itself (no

@@ -4,6 +4,7 @@ description: Directly drives a specific vehicle on a running CARLA server — ra
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server with at least one vehicle. Does NOT need UE4_ROOT. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/vehicle-control.md
 ---

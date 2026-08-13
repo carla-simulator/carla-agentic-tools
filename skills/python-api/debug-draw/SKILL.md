@@ -4,6 +4,7 @@ description: Draws debug overlays in a running CARLA world via world.debug — p
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Shapes are visible only in a rendered view (windowed or packaged server), not in -nullrhi headless. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/debug.md
 ---

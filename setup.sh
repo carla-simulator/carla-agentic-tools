@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# setup.sh — prepare carla-agentic-tools so MCP-capable agents auto-detect it.
+# setup.sh — DEVELOPMENT convenience: editable install + .mcp.json in a checkout.
+#
+# Not the install path for users. Published releases are installed with
+#   npx -y @carla-simulator/agentic-tools     (or: uvx carla-agentic-tools)
+# and configured with an `env` block in the MCP client (see README "Install").
+# Use this script when you are editing the skills in this repo and want a client
+# to pick up the working tree; `CARLA_SKILLS_DIR=$PWD/skills` does the same for an
+# already-installed server.
 #
 # What it does, idempotently:
 #   1. Installs the MCP server into the active system Python (`pip install -e .`).

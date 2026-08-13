@@ -4,6 +4,7 @@ description: Imports an FBX pedestrian into a CARLA source build as a spawnable 
 license: MIT
 compatibility: Linux. Requires a built CarlaUnreal UE 4.26 fork (UE4_ROOT) and a built CARLA checkout — this skill checks for both and defers to build-carla-ue4, it never builds. Importing needs no Python environment; verifying needs one that imports `carla`. Two editor boots, roughly 5-8 minutes. Automatic registration needs WalkerFactory's pedestrian list to be a blueprint MEMBER variable (references, C1); without it the walker is still built and the factory entry is a one-line paste.
 metadata:
+  group: ue4
   requires: build-carla-ue4
   prerequisites: scripts/check_env.sh
   reference: references/walker_import.md

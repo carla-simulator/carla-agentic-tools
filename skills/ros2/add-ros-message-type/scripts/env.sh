@@ -18,7 +18,7 @@ fi
 [ -n "${_KEEP_CARLA_ROOT}" ] && CARLA_UE4_ROOT="${_KEEP_CARLA_ROOT}"
 
 _SKILL_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../.." && pwd)"
+_DERIVED_ROOT="$(cd "${_SKILL_SCRIPTS_DIR}/../../../../.." && pwd)"
 _UPROJECT_REL="Unreal/CarlaUE4/CarlaUE4.uproject"
 
 if [ -z "${CARLA_UE4_ROOT:-}" ]; then

@@ -4,6 +4,7 @@ description: Adds a new ROS 2 message type to CARLA's native ROS 2 interface —
 license: MIT
 compatibility: A CARLA checkout whose LibCarla/source/carla/ros2 exists (native ROS 2 branch), Docker running (only for the RIHS01 hash — no local ROS 2 needed), and the toolchain to build LibCarla with --ros2. Editing only; nothing is published or run.
 metadata:
+  group: ros2
   prerequisites: scripts/check_env.sh
   reference: references/cdr.md
 ---

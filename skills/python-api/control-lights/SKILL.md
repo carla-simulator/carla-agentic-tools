@@ -4,6 +4,7 @@ description: Controls the map's light sources through the CARLA LightManager —
 license: MIT
 compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Light effects are visible on a rendered server. Tested against CARLA 0.9.16.
 metadata:
+  group: python-api
   prerequisites: scripts/check_env.sh
   reference: references/lights.md
 ---
