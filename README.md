@@ -105,16 +105,33 @@ only for local development.
 
 ## Releasing
 
-Bump the version in **both** `pyproject.toml` and `npm/package.json` (CI fails on
-a mismatch, since the wrapper resolves its own version from PyPI), then:
+There is no release automation in this repo — publishing is manual and deliberate.
+
+Bump the version in **both** `pyproject.toml` and `npm/package.json`: the npm
+wrapper resolves *its own* version from PyPI, so a mismatch ships a front door
+pointing at a server that does not exist. Then:
 
 ```bash
-git tag v0.2.0 && git push --tags
+rm -rf dist && python -m build && python -m twine check dist/*
+python -m twine upload dist/*                    # PyPI  (or --repository testpypi)
+cd npm && npm publish --access public            # only AFTER PyPI succeeded
 ```
 
-`.github/workflows/release.yml` publishes the wheel to PyPI via trusted
-publishing and then the wrapper to npm — in that order, so the front door never
-points at a version that does not exist yet.
+PyPI first, npm second — the wrapper is useless until the version it pins exists.
+Before uploading, confirm the artifact really carries the skills, since a wheel
+that installs cleanly but ships an empty registry is this project's known failure
+mode:
+
+```bash
+python - <<'EOF'
+import glob, zipfile, collections
+n = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+sk = [x for x in n if x.endswith("SKILL.md")]
+print(len(sk), "skills", dict(collections.Counter(x.split("/skills/")[1].split("/")[0] for x in sk)))
+assert len(sk) >= 30 and not [x for x in n if "__pycache__" in x]
+EOF
+pytest -q tests/
+```
 
 ## Targeting a CARLA instance
 
