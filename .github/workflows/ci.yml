@@ -111,8 +111,15 @@ jobs:
         # Its stdout is an MCP stream, so guidance must go to stderr even when
         # nothing can be launched.
         run: |
+          # Resolve node ABSOLUTELY first: on a GitHub runner node lives in the
+          # tool cache, not /usr/bin, so restricting PATH before invoking it gives
+          # "node: command not found" (exit 127) and never exercises the wrapper.
+          NODE="$(command -v node)"
           set +e
-          PATH=/usr/bin:/bin node npm/bin/carla-agentic-tools.js >/tmp/out.txt 2>/tmp/err.txt
+          # An empty PATH is the point: no uvx/uv/pipx can resolve, which is the
+          # condition under test. node is invoked by absolute path, so it is
+          # unaffected.
+          PATH=/nonexistent "$NODE" npm/bin/carla-agentic-tools.js >/tmp/out.txt 2>/tmp/err.txt
           status=$?
           set -e
           echo "exit=$status"; cat /tmp/err.txt
