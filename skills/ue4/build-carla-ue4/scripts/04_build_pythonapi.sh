@@ -25,11 +25,36 @@ source "${HERE}/env.sh"
 carla_require_build_python || exit 1   # sets CARLA_PY_BIN + CARLA_PY_VERSION
 echo "[py] building against: ${CARLA_PY_BIN} (${CARLA_PY_VERSION})"
 
-# Idempotent ("if needed"): skip when carla already imports in this env unless
-# FORCE=1. `make PythonAPI` is also incremental, so a re-run is not wasteful.
-if [ "${FORCE:-0}" != "1" ] && "${CARLA_PY_BIN}" -c "import carla" >/dev/null 2>&1; then
-  echo "[py] carla already importable in ${CARLA_PY_BIN} — skipping. FORCE=1 to rebuild."
-  exit 0
+# Idempotent ("if needed"), but the test must be "did THIS checkout produce a
+# client", not "is any carla importable". A globally installed carla (a release
+# wheel, or another checkout's build) otherwise makes a fresh clone skip its own
+# PythonAPI forever — and the client you end up talking to the server with is then
+# the wrong version, which fails as a mid-call abort rather than an import error
+# (verified 2026-08: a 0.10.0 client against a 0.9.16 server died with
+# std::bad_array_new_length).
+#
+# So: skip only when carla imports AND it resolves inside this checkout, or a
+# wheel for this interpreter already sits in the checkout's dist/.
+if [ "${FORCE:-0}" != "1" ]; then
+  _origin="$("${CARLA_PY_BIN}" -c 'import carla,os;print(os.path.realpath(carla.__file__))' 2>/dev/null || true)"
+  _dist_whl="$(ls "${CARLA_UE4_ROOT}"/PythonAPI/carla/dist/carla-*-cp"${CARLA_PY_VERSION//./}"-*.whl 2>/dev/null | head -1 || true)"
+  case "${_origin}" in
+    "${CARLA_UE4_ROOT}"/*)
+      echo "[py] carla already importable FROM THIS CHECKOUT (${_origin}) — skipping. FORCE=1 to rebuild."
+      exit 0;;
+  esac
+  if [ -n "${_dist_whl}" ]; then
+    echo "[py] this checkout already built a wheel: ${_dist_whl}"
+    echo "[py] install it into the target env, or FORCE=1 to rebuild:"
+    echo "[py]   ${CARLA_PY_BIN} -m pip install '${_dist_whl}'"
+    exit 0
+  fi
+  if [ -n "${_origin}" ]; then
+    echo "[py] NOTE: carla imports from ${_origin}"
+    echo "[py]       that is OUTSIDE this checkout, so it is a DIFFERENT build —"
+    echo "[py]       building this checkout's own client now (activate a venv first"
+    echo "[py]       if you do not want it installed over that one)."
+  fi
 fi
 
 cd "${CARLA_UE4_ROOT}"

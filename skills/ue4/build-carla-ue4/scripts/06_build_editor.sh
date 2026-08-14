@@ -66,7 +66,11 @@ WANT_ROS2="off"; [ "${ROS2}" = "1" ] && WANT_ROS2="on"
 # this guard self-healing instead of trusting a file that can lie.
 HAVE_ROS2="$(carla_ros2_ini_state)"
 if [ -f "${CARLA_SO}" ] && command -v nm >/dev/null 2>&1; then
-  if nm -DC "${CARLA_SO}" 2>/dev/null | grep -q 'carla::ros2'; then
+  # grep -c, never grep -q: -q exits on the first match, nm then dies of SIGPIPE,
+  # and `set -o pipefail` turns that into a FAILED pipeline — so a binary that DOES
+  # contain the symbols reads as "off" (verified: exit 141 with 1112 matches).
+  # -c drains the stream, so the exit status means what it says.
+  if [ "$(nm -DC "${CARLA_SO}" 2>/dev/null | grep -c 'carla::ros2' || true)" -gt 0 ]; then
     HAVE_ROS2="on"
   else
     HAVE_ROS2="off"
