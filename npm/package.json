@@ -1,0 +1,33 @@
+{
+  "name": "@carla-simulator/agentic-tools",
+  "version": "0.3.0",
+  "description": "npx front door for carla-agentic-tools: an MCP server exposing vetted CARLA build, simulation and ROS 2 procedures as skills.",
+  "keywords": [
+    "carla",
+    "mcp",
+    "agent",
+    "skills",
+    "simulation",
+    "ros2",
+    "unreal"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/carla-simulator/carla-agentic-tools",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carla-simulator/carla-agentic-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/carla-simulator/carla-agentic-tools/issues"
+  },
+  "bin": {
+    "carla-agentic-tools": "bin/carla-agentic-tools.js"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
