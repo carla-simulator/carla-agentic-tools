@@ -20,10 +20,13 @@ carla-agentic-tools/
 │   └── server.py             # MCP server: list_skills / read_skill / check_prerequisites
 ├── tests/                    # structural checks the release gates on
 └── skills/
-    ├── setup/                # get CARLA at all: download-carla, install-python-api
+    ├── setup/                # get the pieces at all: download-carla, install-python-api,
+    │                         #   install-scenario-runner, install-leaderboard
     ├── python-api/           # drives any running server (world-data, create-sensor, …)
     ├── ue4/                  # needs a UE4 checkout (build, package, run, import)
-    └── ros2/                 # native ROS 2 interface (publishers, msg types, RViz)
+    ├── ros2/                 # native ROS 2 interface (publishers, msg types, RViz)
+    ├── scenario-runner/      # CARLA's scenario engine (scenarios, OpenSCENARIO, routes)
+    └── leaderboard/          # the AD Leaderboard on top of it (agents, evaluation, scoring)
 ```
 
 **Starting from nothing?** Three skills, in order: `download-carla` (fetches a
@@ -143,6 +146,9 @@ The skills operate on a real, built CARLA + UE4, chosen via two variables:
 | `CARLA_UE4_ROOT` | a carla source checkout (branch `ue4-dev`), needed by the build/package/import skills |
 | `UE4_ROOT` | the built CarlaUnreal UE 4.26 fork — editor mode only |
 | `PYTHON` | the interpreter that has the `carla` wheel. Set this whenever the server runs under `uvx`/`npx`, whose own python is first on PATH |
+| `CARLA_ROOT` | a CARLA release/checkout root, needed by scenario-runner and leaderboard for the `agents` package the `carla` wheel does not ship |
+| `SCENARIO_RUNNER_ROOT` | a scenario_runner checkout — gates the `scenario-runner` group |
+| `LEADERBOARD_ROOT` | a leaderboard checkout — gates the `leaderboard` group |
 | `CARLA_HOST` / `CARLA_PORT` | where the simulator listens (default `127.0.0.1:2000`) |
 
 No `carla` wheel yet? The `install-python-api` skill installs it from your release's
@@ -151,8 +157,14 @@ bundled wheel or from PyPI, and checks it matches the simulator's version.
 Set them in the client's `env` block (above) or export them before launching —
 a live export always wins. One install can therefore drive several checkouts:
 give each client entry its own `env`. Future groups follow the same pattern
-(`CARLA_UE5_ROOT`, `SCENARIO_RUNNER_ROOT`, `SCENIC_ROOT`), and `list_skills`
-marks a group unavailable when its variable is unset.
+(`CARLA_UE5_ROOT`, `SCENIC_ROOT`), and `list_skills` marks a group unavailable when
+its variable is unset.
+
+**Version pairing matters** for the scenario-runner and leaderboard groups: a
+scenario_runner branch belongs to a CARLA version, and a leaderboard version
+belongs to a scenario_runner branch. The two installer skills derive the pairing
+and every `check_env.sh` in those groups fails loudly on a mismatch, because the
+symptom otherwise is scenarios that silently never trigger.
 
 `CARLA_UE4_ROOT` also auto-resolves to `$PWD` when a skill runs from inside a
 checkout; `check_prerequisites` fails loudly, naming the paths it checked, when
