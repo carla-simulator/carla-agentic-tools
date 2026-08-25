@@ -70,6 +70,7 @@ GROUP_REQUIREMENTS = {
             "a CARLA ue4-dev checkout or an extracted release"),
     "ue5": (("CARLA_UE5_ROOT", "CARLA_TARGET"), "a CARLA ue5-dev checkout"),
     "scenario-runner": (("SCENARIO_RUNNER_ROOT",), "a scenario_runner checkout"),
+    "leaderboard": (("LEADERBOARD_ROOT",), "a leaderboard checkout (plus its matching scenario_runner)"),
     "scenic": (("SCENIC_ROOT",), "a Scenic install"),
 }
 
