@@ -106,6 +106,26 @@ Points to know, all verified against a live server:
 - **This skill's `show`/`save` and a ROS subscriber can run at once**; they are
   independent consumers of the same sensor.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+Reading sensor data is unchanged. Two notes:
+
+**`ros-info` no longer lists `rt/carla/map`** — that publisher does not exist on
+0.10.0 (see [[world-data]]).
+
+**`enable_for_ros` and friends moved class**, from `carla.Actor` on 0.9.x to
+`carla.ServerSideSensor` on 0.10.0. A spawned sensor is a `ServerSideSensor` on
+both versions, so calls on the actor handle work either way; they are simply not
+on the `carla.Sensor` base class, which is what you get if you introspect the
+wrong type.
+
+New on 0.10.0 and readable by this skill without changes: the fisheye camera
+variants and `sensor.lidar.hss_lidar` (both UE5 lines), plus
+`sensor.camera.rt_lens`, `sensor.other.autoware_gnss` and
+`sensor.other.vehicle_status` (**UE 5.8 only**)
+([[create-sensor]] lists them). `ServerSideSensor.send()` is new, for pushing
+custom V2X messages.
+
 ## Examples
 
 **Example 1: see the ego's camera**

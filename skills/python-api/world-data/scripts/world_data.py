@@ -41,6 +41,17 @@ def _world():
     return c.get_world()
 
 
+def _server_version() -> str:
+    """Server version string, e.g. "0.9.16" or "0.10.0". "" if unreachable."""
+    try:
+        c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
+                         int(os.environ.get("CARLA_PORT", 2000)))
+        c.set_timeout(10.0)
+        return c.get_server_version()
+    except Exception:
+        return ""
+
+
 def _speed(a):  # m/s magnitude
     v = a.get_velocity()
     return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
@@ -113,7 +124,7 @@ _ROS_UNSUPPORTED = ("other.lane_invasion", "other.obstacle", "other.rss")
 
 def _sensor_topics(type_id, base):
     short = type_id[len("sensor."):] if type_id.startswith("sensor.") else type_id
-    if short in _ROS_UNSUPPORTED or "gbuffer" in short:
+    if short in _ROS_UNSUPPORTED:
         return []
     if short == "camera.dvs":
         return [(base + s, m) for s, m in _CAMERA_TOPICS + _CLOUD_TOPICS]
@@ -147,7 +158,18 @@ def cmd_ros_topics(args):
 
     print("world topics (exist whenever the server runs with --ros2):")
     print("  rt/clock       [rosgraph_msgs/Clock]  every tick")
-    print("  rt/carla/map   [std_msgs/String]      OpenDRIVE, LATCHED, re-sent on map load")
+    # rt/carla/map comes from CarlaMapPublisher, which exists in 0.9.x only: the
+    # publisher was dropped in 0.10.0, so advertising the topic there sends
+    # people hunting for a topic that is never created.
+    try:
+        server = _server_version()
+    except Exception:
+        server = ""
+    if server.startswith("0.10"):
+        print("  rt/carla/map   NOT PUBLISHED on 0.10.0 — no CarlaMapPublisher in this build;")
+        print("                 read the OpenDrive with map.to_opendrive() over RPC instead")
+    else:
+        print("  rt/carla/map   [std_msgs/String]      OpenDRIVE, LATCHED, re-sent on map load")
     print("  rt/tf          [tf2_msgs/TFMessage]   sensor->parent transforms ONLY;")
     print("                 absent until a sensor publishes (a vehicle alone emits no transform)")
 

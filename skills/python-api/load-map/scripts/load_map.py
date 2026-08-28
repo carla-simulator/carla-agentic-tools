@@ -183,6 +183,17 @@ def cmd_layer(args: argparse.Namespace) -> None:
         action = f"unloaded layers {args.unload}"
     _report(world, f"({action})")
     print("  note: layer ops are no-ops on fully-baked (non-'_Opt') maps")
+    # On 0.10.0 they are no-ops on EVERY map: the UE5 conversion flattened the
+    # per-layer sublevels into the persistent level, so the mask matches nothing
+    # in World->GetStreamingLevels(). The call still returns success.
+    try:
+        if client.get_server_version().startswith("0.10"):
+            print("  WARNING 0.10.0: layer ops do nothing on ANY map — the layer "
+                  "sublevels were baked into the persistent level.")
+            print("          Hide geometry with enable_environment_objects "
+                  "(toggle-env-objects) instead.")
+    except Exception:
+        pass
 
 
 def main() -> None:

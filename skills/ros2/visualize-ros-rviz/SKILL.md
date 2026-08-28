@@ -88,6 +88,26 @@ duplicate hero on the same topics.
 own `run_map_and_lidar_demo.sh` / `run_rviz.sh`, so their behaviour is never
 forked here.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+**`/carla/map` is gone on 0.10.0.** `CarlaMapPublisher` exists in 0.9.x's
+`LibCarla/source/carla/ros2/publishers/` and is absent in 0.10.0, so the latched
+OpenDRIVE topic is never advertised. `info /carla/map` and `echo /carla/map`
+will simply wait. Get the map with `map.to_opendrive()` over RPC, or point RViz
+at the lidar/camera topics, which are unchanged.
+
+That also means the RViz lane-network preset has no map source on 0.10.0 — the
+road network has to come from the client side.
+
+Topics that gained publishers on 0.10.0, **UE 5.8 only**: the Autoware set
+(`AutowareGNSSPublisher`, `AutowareVehicleStatusPublisher`, from
+`sensor.other.autoware_gnss` and `sensor.other.vehicle_status`). The DVS camera
+publisher was renamed `CarlaDVSPublisher` → `CarlaDVSCameraPublisher`; its topics
+are unchanged.
+
+`rt/tf` is additionally gated by `World.set_publish_tf()` on 0.10.0, so a missing
+TF tree can now mean "switched off globally" rather than "no sensor publishing".
+
 ## Knobs
 
 | Env | Default | Meaning |

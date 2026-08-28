@@ -180,9 +180,31 @@ def cmd_physics(args):
     v = _resolve(world, args)
     pc = v.get_physics_control()
     if args.show or (args.mass is None and args.drag is None and args.max_rpm is None):
+        # The gearbox fields differ by engine, so read whichever this build has:
+        # 0.9.x (PhysX) exposes forward_gears as a list of GearPhysicsControl plus
+        # clutch_strength; 0.10.0 (Chaos) deletes both and exposes
+        # forward_gear_ratios / reverse_gear_ratios as plain float lists.
+        # 0.10.0's forward_gear_ratios/reverse_gear_ratios are declared but have
+        # NO boost::python converter for std::vector<float>: reading either
+        # raises TypeError("No to_python (by-value) converter found"). Everything
+        # else on the struct reads fine, so degrade to a count of None.
+        try:
+            gears = pc.forward_gears
+        except AttributeError:
+            try:
+                gears = list(pc.forward_gear_ratios)
+            except (AttributeError, TypeError):
+                gears = None
+        extra = ""
+        if hasattr(pc, "clutch_strength"):
+            extra = f" clutch={pc.clutch_strength:.0f}"
+        elif hasattr(pc, "transmission_efficiency"):
+            extra = (f" transmission_efficiency={pc.transmission_efficiency:.2f}"
+                     f" differential={pc.differential_type}")
+        gear_text = "unreadable (0.10.0 converter gap)" if gears is None else len(gears)
         print(f"id={v.id} physics: mass={pc.mass:.0f}kg drag={pc.drag_coefficient:.2f} "
-              f"max_rpm={pc.max_rpm:.0f} gears={len(pc.forward_gears)} wheels={len(pc.wheels)} "
-              f"clutch={pc.clutch_strength:.0f}")
+              f"max_rpm={pc.max_rpm:.0f} gears={gear_text} wheels={len(pc.wheels)}"
+              f"{extra}")
         return
     if args.mass is not None:    pc.mass = args.mass
     if args.drag is not None:    pc.drag_coefficient = args.drag

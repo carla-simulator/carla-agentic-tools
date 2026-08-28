@@ -43,9 +43,18 @@ some are no-ops.
 Common scalar fields (this skill exposes mass/drag/max_rpm; the rest are editable
 in code):
 
-- `mass` (kg), `drag_coefficient`, `max_rpm`, `moi`, `center_of_mass`,
-- `clutch_strength`, `gear_switch_time`, `final_ratio`, `forward_gears`,
-  `use_gear_autobox`, `use_sweep_wheel_collision`,
+- `mass` (kg), `drag_coefficient`, `max_rpm`, `center_of_mass`,
+- **0.9.x (PhysX) only**: `moi`, `clutch_strength`, `gear_switch_time`,
+  `forward_gears` (list of `GearPhysicsControl`), `use_gear_autobox`,
+  `damping_rate_full_throttle`, `damping_rate_zero_throttle_clutch_engaged`,
+- **0.10.0 (Chaos) instead**: `transmission_efficiency`, `gear_change_time`,
+  `forward_gear_ratios` / `reverse_gear_ratios` (float lists, and **unreadable
+  from Python** — no `std::vector<float>` converter), `use_automatic_gears`,
+  `differential_type`, `front_rear_split`, `idle_rpm`, `rev_up_moi`,
+  `rev_down_rate`, `brake_effect`, `chassis_height`, `chassis_width`, `drag_area`,
+  `downforce_coefficient`, `inertia_tensor_scale`, `sleep_threshold`,
+  `sleep_slope_limit`,
+- `final_ratio`, `use_sweep_wheel_collision` (both versions),
 - `torque_curve`, `steering_curve` (lists of `Vector2D`),
 - `wheels` (list of `WheelPhysicsControl`: tyre friction, damping, steer angle,
   radius, suspension...).

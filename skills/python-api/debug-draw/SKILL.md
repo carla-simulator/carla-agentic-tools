@@ -59,6 +59,18 @@ Shapes render on a world **tick**, in a **rendered** view. Two gotchas:
   simulation time. For an overlay that stays up while stepping, redraw each frame
   (or set `--life` longer than your tick interval).
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+The HUD variants are **gone on 0.10.0**. `carla.DebugHelper` there exposes
+exactly seven methods — `draw_point`, `draw_line`, `draw_arrow`, `draw_box`,
+`draw_string`, `clear_debug_shape`, `clear_debug_string` — so the 0.9.14+
+`draw_hud_point` / `draw_hud_line` / `draw_hud_box` family (which drew in screen
+space, ignoring depth) has no equivalent. Use the world-space calls; they behave
+the same on both versions.
+
+`clear_debug_shape` and `clear_debug_string` exist on both, and are the only way
+to remove a shape before its lifetime expires.
+
 ## Examples
 
 **Example 1: mark a spot**
