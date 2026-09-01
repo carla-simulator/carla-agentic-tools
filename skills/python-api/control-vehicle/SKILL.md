@@ -147,6 +147,37 @@ last input until you change it, so use `--hold` for a timed action or `stop` to
 halt. `physics --show` reads back the applied values; `telemetry` overlays live
 physics on screen.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+Physics control is the one part of this skill that is **engine-specific**. UE4
+builds (0.9.x) use PhysX; 0.10.0 uses Chaos, and `VehiclePhysicsControl` was
+replaced field-for-field. Verified live against a 0.10.0 server:
+
+| 0.9.x (PhysX) | 0.10.0 (Chaos) |
+|---|---|
+| `forward_gears` — list of `GearPhysicsControl` | `forward_gear_ratios` / `reverse_gear_ratios` — float lists; **`carla.GearPhysicsControl` no longer exists** |
+| `clutch_strength`, `gear_switch_time`, `use_gear_autobox` | `transmission_efficiency`, `gear_change_time`, `use_automatic_gears`, `differential_type`, `front_rear_split`, `final_ratio` |
+| `moi`, `damping_rate_full_throttle`, `damping_rate_zero_throttle_clutch_engaged/disengaged` | `rev_up_moi`, `rev_down_rate`, `idle_rpm`, `brake_effect`, `inertia_tensor_scale` |
+| — | `chassis_height`, `chassis_width`, `drag_area`, `downforce_coefficient`, `sleep_threshold`, `sleep_slope_limit` |
+
+Wheels were renamed too: `radius`→`wheel_radius`, `tire_friction`→
+`friction_force_multiplier`, `position`→`location`, `max_handbrake_torque`→
+`max_hand_brake_torque`, `lat_stiff_*`/`long_stiff_value`→`cornering_stiffness` +
+`spring_rate`/`suspension_*`, plus new `axle_type`, `abs_enabled`,
+`traction_control_enabled`, `sweep_type`, `wheel_mass`, `wheel_width`.
+
+**Two gear fields are unreadable from Python on 0.10.0.** `forward_gear_ratios`
+and `reverse_gear_ratios` are declared with no `std::vector<float>` converter, so
+reading either raises `TypeError: No to_python (by-value) converter found for C++
+type: std::__1::vector<float, ...>`. Every other field on the struct reads fine,
+and `physics --show` reports `gears=unreadable (0.10.0 converter gap)` rather than
+dying. Writing and applying still works: a `mass` change round-tripped
+1696 → 1750 kg.
+
+`mass`, `drag_coefficient`, `max_rpm`, `center_of_mass`, `torque_curve`,
+`steering_curve` and `wheels` are spelled the same on both, which is why the
+`--mass` / `--drag` / `--max-rpm` flags need no version handling.
+
 ## Examples
 
 **Example 1: nudge the ego forward**

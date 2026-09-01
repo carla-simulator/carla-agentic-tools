@@ -53,7 +53,7 @@ _ROS_UNSUPPORTED = ("other.lane_invasion", "other.obstacle", "other.rss")
 def ros_topics_for(type_id: str, base: str):
     """[(topic, msg_type)] the server publishes for this sensor, or []."""
     short = type_id[len("sensor."):] if type_id.startswith("sensor.") else type_id
-    if short in _ROS_UNSUPPORTED or "gbuffer" in short:
+    if short in _ROS_UNSUPPORTED:
         return []
     if short == "camera.dvs":                      # camera + point cloud
         return [(base + s, m) for s, m in _CAMERA_TOPICS + _CLOUD_TOPICS]

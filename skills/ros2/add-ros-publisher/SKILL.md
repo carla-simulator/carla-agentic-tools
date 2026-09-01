@@ -30,6 +30,31 @@ UE4 sensor/actor  --ProcessDataFrom*-->  ROS2 (dispatch, ROS2.cpp)
 Message types are [[add-ros-message-type]]; this skill is everything below the
 type.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+The publisher layer was refactored on 0.10.0, so the file you copy from differs.
+The right-hand column is UE 5.8; **UE 5.5 has the same `BasicPublisher` refactor
+but no `middleware/` directory**, so its QoS type is the pre-`QosProfile.h` one
+and it has none of the Autoware rows ([[check-ue5-limitations]]):
+
+| | 0.9.x | 0.10.0 |
+|---|---|---|
+| base class to inherit | `CarlaPublisher` | `BasicPublisher` (and `BasicSubscriber` / `BasicListener`) |
+| QoS type | `PublisherQos.h` | `QosProfile.h` |
+| middleware | `IPublisherMiddleware` impls | same, plus `ActiveMiddleware.{h,cpp}` |
+| map publisher | `CarlaMapPublisher` | **removed** — do not model a new publisher on it |
+| DVS camera | `CarlaDVSPublisher` | `CarlaDVSCameraPublisher` |
+| Autoware | — | `AutowareGNSSPublisher`, `AutowareVehicleStatusPublisher`, `AutowareControlSubscriber`, `AutowareSteeringCompensation.h` |
+
+0.10.0 also factors the per-sensor maths out of the publishers into reusable
+headers you should use rather than re-derive: `CameraIntrinsics`, `ImuMath`,
+`DvsEventEncoding`, `OpticalFlowEncoding`, `PointCloudFieldsLayout`,
+`RadarPolarToCartesian`, `TransformQuaternion`, and `AckermannControlConversion`
+on the subscriber side. A new `listeners/` directory holds `BasicListener`.
+
+The registration point, the `ProcessDataFrom*` entry points and the UE plugin call
+sites work the same way on both.
+
 ## Instructions
 
 ```
@@ -135,7 +160,7 @@ the natural targets — and each already has a `ProcessDataFrom*` or needs one:
 | `other.lane_invasion` | `CarlaLineInvasion` message type already exists |
 | `other.obstacle` | `ProcessDataFromObstacleDetection` exists in `ROS2.h` |
 | `other.rss` | no message type yet |
-| world observer, GBuffer streams | high volume; think before publishing |
+| world observer | high volume; think before publishing |
 
 ## Adding a middleware (RMW)
 

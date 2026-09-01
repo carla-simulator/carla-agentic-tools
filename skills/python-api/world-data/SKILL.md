@@ -109,6 +109,25 @@ publisher at all, or the vehicle is not `role_name = hero` (only the hero is
 registered). If even `rt/clock` is missing, the problem is upstream — the build
 or the launch flag ([[run-carla-server]] `ROS2=1`).
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+`ros-topics` is the only mode that changes. **`rt/carla/map` does not exist on
+0.10.0**: `CarlaMapPublisher` is present in 0.9.x and absent from
+`LibCarla/source/carla/ros2/publishers/` in 0.10.0, so nothing ever advertises
+the OpenDRIVE topic. The mode detects the server version and says so rather than
+listing a topic you would then hunt for; read the map with `map.to_opendrive()`
+over RPC instead.
+
+`rt/clock` and `rt/tf` behave the same on both. On 0.10.0, `rt/tf` publishing is
+additionally gated globally by `World.set_publish_tf()`, which is new.
+
+The actor-query modes are unchanged, and 0.10.0 adds a few worth knowing:
+`world.get_traffic_sign()`, `world.get_names_of_all_objects()` and
+`world.set_imu_sensor_gravity()` — plus `world.get_ego_spawn_points()` and
+`world.spawn_custom_mesh()`, which are **UE 5.8 only**
+([[check-ue5-limitations]]). `CityObjectLabel` gained `Rock`, which matters
+for `level-bbox` if you hard-code label integers.
+
 ## Examples
 
 **Example 1: 1 vehicle among many**

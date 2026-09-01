@@ -74,6 +74,26 @@ python3 scripts/waypoints.py waypoint --at 30,20,0
 python3 scripts/waypoints.py navigate --at 30,20,0 --dist 2 --steps 30 --draw
 ```
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+**`Landmark.waypoint` is always `None` on 0.10.0.** Measured on Town10HD_Opt:
+68 landmarks, 68 of them with `waypoint is None`. Every other landmark field
+populates normally (`id`, `name`, `type`, `road_id`, `s`, `t`, `distance`,
+`orientation`, `transform`, `country`, `unit`, `value`, `sub_type`, `text`,
+`h_offset`, `z_offset`, `height`, `width`, `pitch`, `roll`, `is_dynamic`,
+`get_lane_validities`).
+
+So any code shaped `landmark.waypoint.transform` or
+`landmark.waypoint.lane_id` raises `AttributeError: 'NoneType'` there. Get the
+road position from the landmark itself instead — `map.get_waypoint_xodr(
+landmark.road_id, lane_id, landmark.s)`, or `map.get_waypoint(
+landmark.transform.location)` when you only need the nearest lane.
+
+`get_all_landmarks`, `get_all_landmarks_of_type`, `get_all_landmarks_from_id` and
+`get_landmark_group` all work on both versions. The rest of the Map/Waypoint API
+this skill uses — `get_topology`, `generate_waypoints`, `get_waypoint`,
+`get_spawn_points`, `get_crosswalks` — is unchanged.
+
 ## Examples
 
 **Example 1: describe the map**

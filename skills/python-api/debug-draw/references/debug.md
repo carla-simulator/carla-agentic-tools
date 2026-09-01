@@ -13,9 +13,11 @@ Detail layer for the `debug-draw` skill. All calls are on `world.debug`
 | `draw_box` | `(BoundingBox, Rotation, thickness=0.1, color, life_time)` | wireframe box |
 | `draw_string` | `(location, text, draw_shadow=False, color, life_time)` | floating text |
 
-There are `draw_hud_*` variants (`draw_hud_line/point/box`) that draw in screen/HUD
-space rather than world space — same arguments; use the world-space ones for
-marking map locations.
+On **0.9.x only** there are `draw_hud_*` variants (`draw_hud_line/point/box`) that
+draw in screen/HUD space rather than world space — same arguments. They do **not
+exist on 0.10.0**, where `carla.DebugHelper` has exactly seven methods
+(`draw_point/line/arrow/box/string`, `clear_debug_shape`, `clear_debug_string`).
+Use the world-space ones for marking map locations: they work on both.
 
 `carla.Color(r, g, b)` is 0-255 per channel. `carla.BoundingBox(location, extent)`
 takes a centre `Location` and a half-size `Vector3D` (extent is half-width, so a

@@ -69,6 +69,23 @@ The effect is visual + collision on a rendered server. `enable_environment_objec
 returns nothing to read back, so the command reports the **count toggled**;
 confirm the change in a windowed/packaged view.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+`get_environment_objects()` and `enable_environment_objects()` — what this skill
+uses — work normally. Measured on Town10HD_Opt: 59 102 objects, 48 369 of them
+`Buildings`, then `Vegetation` 4 270, `Fences` 1 767, `Static` 1 223,
+`Dynamic` 489, `Sidewalks` 269, `TrafficSigns` 147, `Poles` 120,
+`TrafficLight` 62, `Bicycle` 56, plus 1 768 labelled `NONE`.
+
+`CityObjectLabel` gained **`Rock` (= 29)**, which does not exist on 0.9.x
+(`LibCarla/source/carla/rpc/ObjectLabel.h:48`). Code that iterates the enum by
+name is fine; code that hard-codes label integers is not.
+
+**Do not reach for map layers as an alternative here.** `load_map_layer` /
+`unload_map_layer` are accepted and silently do nothing on 0.10.0 — see
+[[load-map]] for the measurement and the cause. `enable_environment_objects` is
+the mechanism that actually hides geometry on this version.
+
 ## Examples
 
 **Example 1: clear the buildings**
