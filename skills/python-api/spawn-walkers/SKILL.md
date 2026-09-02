@@ -32,15 +32,27 @@ This needs a navmesh — validate it first with the
 [`debug-navmesh`](../debug-navmesh/SKILL.md) skill if walkers won't move. It works
 in **async** mode (the default); sync is optional (for reproducible runs).
 
+**A client has to pump ticks or the crowd animates in place.** The walker nav
+update only advances while some client holds a tick subscription. Measured on
+0.10.0 in async, same spawn both ways: an idle `time.sleep()` loop gives 0/10
+walkers moving, an idle `world.wait_for_tick()` loop gives 10/10 (10.07 m in
+6 s). Pass **`--hold`** and this script does the pumping; that is also why
+CARLA's own `generate_traffic.py` ends in `while True: world.wait_for_tick()`.
+In sync mode your `world.tick()` loop pumps it just the same.
+
+Walkers are also spawned `--z-offset` (default 2.0 m) above the navmesh point:
+spawning at the navmesh z is rejected on 0.10.0 with *"Spawn failed because of
+collision at spawn position"* (+0.5 still fails, +1.0 is the first that works).
+
 ## Instructions
 
 ```
 Progress:
 - [ ] Step 1: Check prerequisites (bash scripts/check_env.sh), clear FAILs
 - [ ] Step 2: (if walkers won't move) validate the navmesh — debug-navmesh
-- [ ] Step 3: Spawn N walkers (they start wandering immediately, forever)
+- [ ] Step 3: Spawn N walkers with --hold (they wander while it pumps ticks)
 - [ ] Step 4: Verify visually / via the world-data skill; spawn reports its count
-- [ ] Step 5: Destroy (controllers first, then walkers) when done
+- [ ] Step 5: Ctrl+C the held process, then destroy (controllers first, then walkers)
 ```
 
 Commands need `CARLA_HOST`/`CARLA_PORT` from `scripts/env.sh`.
@@ -56,8 +68,9 @@ bash scripts/check_env.sh
 ```bash
 source scripts/env.sh
 
-# 30 pedestrians, wandering indefinitely at 1.0-1.8 m/s
-python3 scripts/walkers.py spawn --count 30
+# 30 pedestrians wandering at 1.0-1.8 m/s — --hold pumps the ticks their AI
+# needs; without it they spawn and play the walk animation without moving
+python3 scripts/walkers.py spawn --count 30 --hold
 
 # reproducible placement (still wanders forever)
 python3 scripts/walkers.py spawn --count 50 --seed 42
@@ -84,8 +97,8 @@ points collide) — the spawn command reports the shortfall.
 
 User says: "spawn 40 pedestrians walking around"
 
-`spawn --count 40`. They immediately head to random navmesh points; the command
-reports how many spawned.
+`spawn --count 40 --hold`. They head to random navmesh points and keep walking
+for as long as that command runs; it reports how many spawned.
 
 **Example 2: a reproducible pedestrian scene**
 
@@ -101,14 +114,22 @@ User says: "remove all the pedestrians"
 
 ## Troubleshooting
 
-**Problem: walkers spawn but stand still**
-Cause: no navmesh, or controllers never started/targeted.
-Solution: validate with debug-navmesh; this skill starts + targets them, so a
-still crowd usually means a missing navmesh.
+**Problem: walkers spawn but stand still (walk animation plays, no movement)**
+Cause: nothing is pumping ticks — the commonest case by far, and it looks
+exactly like a navmesh problem. On 0.10.0 the walker nav update advances only
+while a client holds a tick subscription.
+Solution: spawn with `--hold`, or keep a client looping `world.wait_for_tick()`
+(async) / `world.tick()` (sync). Only if it still fails, validate the navmesh
+with debug-navmesh — a PASS there rules the map out. Note `WalkerControl`
+applied by hand does not move them either without a pump, so a frozen crowd is
+not evidence about the controllers.
 
-**Problem: far fewer spawned than requested**
-Cause: random navmesh points collide at high counts.
-Solution: expected; retry, lower the count, or spawn in batches.
+**Problem: far fewer spawned than requested (or zero)**
+Cause: `Spawn failed because of collision at spawn position`. At high counts
+random navmesh points collide with each other; *all* of them fail if the
+vertical offset is too small (0.10.0 rejects the bare navmesh z).
+Solution: keep `--z-offset` at its 2.0 m default — a count of 10 returning 0 is
+an offset problem, not a crowding one. Then retry, lower the count, or batch.
 
 **Problem: errors / ghost actors after cleanup**
 Cause: walkers destroyed before their controllers (wrong order).

@@ -58,6 +58,33 @@ def _tm_and_sync(client, world, tm_port):
     return tm
 
 
+def _pump(world) -> None:
+    """Advance (sync) or observe (async) one frame."""
+    if world.get_settings().synchronous_mode:
+        world.tick()
+    else:
+        world.wait_for_tick()
+
+
+def _hold(world, what: str) -> None:
+    """Stay alive pumping ticks until Ctrl+C, so the traffic keeps driving.
+
+    The Traffic Manager lives in the process that created it. Verified on
+    0.10.0: when a spawning client exits, the TM its vehicles were registered
+    with dies with it and every autopilot vehicle sits at throttle 0.00 for
+    ever. A fire-and-forget spawn therefore cannot produce moving traffic --
+    something has to hold the TM open, which is what this does.
+    """
+    print(f"holding {what}; Ctrl+C to release (the TM dies with this process "
+          "and the vehicles coast to a stop)", flush=True)
+    try:
+        while True:
+            _pump(world)
+    except KeyboardInterrupt:
+        print("\nreleased: TM gone, autopilot vehicles will stop")
+
+
+
 def _vehicle_bps(world, filt, safe):
     bps = list(world.get_blueprint_library().filter(filt))
     if safe:
@@ -108,6 +135,11 @@ def cmd_spawn(args):
     print(f"spawned {len(ids)} vehicles at spawn points; {mode}")
     if len(ids) < want:
         print(f"  note: {want - len(ids)} failed (occupied points / collisions — normal)")
+    if getattr(args, "hold", False):
+        _hold(world, f"{len(ids)} vehicles")
+    elif not args.no_autopilot:
+        print("  note: this process owns the TM — it dies on exit and the vehicles "
+              "stop. Use --hold to keep them driving.")
 
 
 def cmd_line(args):
@@ -222,6 +254,8 @@ def main() -> None:
     ps.add_argument("--seed", type=int, help="reproducible blueprint/point/TM choices")
     ps.add_argument("--tm-port", type=int, default=int(os.environ.get("TM_PORT", "8000")))
     ps.add_argument("--no-autopilot", action="store_true", help="spawn parked (no TM autopilot)")
+    ps.add_argument("--hold", action="store_true",
+                    help="stay alive pumping ticks so the TM keeps driving them (Ctrl+C to stop)")
     ps.set_defaults(func=cmd_spawn)
 
     pl = sub.add_parser("line", help="place a row of vehicles in one lane, gap metres apart")
@@ -235,6 +269,8 @@ def main() -> None:
     pl.add_argument("--seed", type=int)
     pl.add_argument("--tm-port", type=int, default=int(os.environ.get("TM_PORT", "8000")))
     pl.add_argument("--no-autopilot", action="store_true", help="static queue (no autopilot)")
+    pl.add_argument("--hold", action="store_true",
+                    help="stay alive pumping ticks so the TM keeps driving them (Ctrl+C to stop)")
     pl.set_defaults(func=cmd_line)
 
     pe = sub.add_parser("ego", help="spawn one hero vehicle (autopilot off by default)")

@@ -5,6 +5,6 @@
 # project shipped 0.3.0. Do not read it from importlib.metadata instead: that
 # reports whatever is INSTALLED, which is wrong (and confusing) when running
 # from a checkout with an older wheel in site-packages.
-__version__ = "0.4.0"
+__version__ = "0.5.1"
 
 __all__ = ["__version__"]

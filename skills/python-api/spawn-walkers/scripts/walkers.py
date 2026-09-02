@@ -52,6 +52,27 @@ def _advance(world: carla.World) -> None:
         world.wait_for_tick()
 
 
+def _hold(world) -> None:
+    """Stay alive pumping ticks until Ctrl+C, so the walkers actually walk.
+
+    Verified on 0.10.0, async mode, identical spawn either way:
+      idle loop time.sleep(30)      -> 0/10 walkers move, 0.00 m in 6 s
+      idle loop wait_for_tick()     -> 10/10 walkers move, 10.07 m in 6 s
+
+    The walker nav update only advances while some client holds a tick
+    subscription, which is what wait_for_tick() registers. This is why CARLA's
+    own generate_traffic.py ends in `while True: world.wait_for_tick()`. A
+    fire-and-forget spawn leaves the crowd playing its walk animation on the
+    spot. In sync mode world.tick() pumps it just the same.
+    """
+    print("holding the crowd (pumping ticks — walkers only move while a client "
+          "does); Ctrl+C to release", flush=True)
+    try:
+        while True:
+            _advance(world)
+    except KeyboardInterrupt:
+        print("\nreleased: the walkers will stop advancing")
+
 def cmd_spawn(args):
     client = _client()
     world = client.get_world()
@@ -75,6 +96,10 @@ def cmd_spawn(args):
         bp = random.choice(walker_bps)
         if bp.has_attribute("is_invincible"):
             bp.set_attribute("is_invincible", "false")  # so they can be hit/collide
+        # Spawning at the navmesh z itself is rejected on 0.10.0 with "Spawn
+        # failed because of collision at spawn position" (measured: +0.5 still
+        # fails, +1.0 is the first that works). Offset up; they settle on foot.
+        loc.z += args.z_offset
         spawn_batch.append(SpawnActor(bp, carla.Transform(loc)))
     if not spawn_batch:
         raise SystemExit("no navmesh spawn points — is the navmesh present? (debug-navmesh)")
@@ -113,6 +138,11 @@ def cmd_spawn(args):
     if len(controller_ids) < args.count:
         print(f"  note: {args.count - len(controller_ids)} fewer than requested "
               f"(nav-point collisions / spawn failures — normal at high counts)")
+    if args.hold and not args.no_wander:
+        _hold(world)
+    elif not args.no_wander:
+        print("  note: they only advance while a client pumps ticks — use --hold "
+              "(or keep your own tick loop running), else they animate in place.")
 
 
 def cmd_destroy(args):
@@ -146,6 +176,11 @@ def main() -> None:
     ps.add_argument("--seed", type=int, help="reproducible pedestrian placement")
     ps.add_argument("--no-wander", action="store_true",
                     help="spawn a stationary crowd (leave controllers unstarted)")
+    ps.add_argument("--z-offset", type=float, default=2.0,
+                    help="height above the navmesh point to spawn (m); 0 is rejected "
+                         "as a spawn collision on 0.10.0 (default: 2.0)")
+    ps.add_argument("--hold", action="store_true",
+                    help="stay alive pumping ticks so the crowd keeps walking (Ctrl+C to stop)")
     ps.set_defaults(func=cmd_spawn)
 
     sub.add_parser("destroy", help="stop + destroy controllers then walkers").set_defaults(func=cmd_destroy)

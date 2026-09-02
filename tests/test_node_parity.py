@@ -230,3 +230,38 @@ def test_group_requirements_are_declared_in_both(pair):
         f"gating variables differ — only in python: {py_vars - js_vars}; "
         f"only in node: {js_vars - py_vars}"
     )
+
+
+def test_tool_descriptions_agree(pair):
+    """The descriptions are what the model routes on, so drift is a real defect.
+
+    Comparing names only let three of them fall out of step: the Python
+    docstrings still said `available: false` meant a group's environment variable
+    was unset, named no ue58 group, and did not mention read_skill's absolute
+    first line or check_prerequisites' `needs` section.
+    """
+    def normalise(tools):
+        # Python docstrings arrive indented and hard-wrapped differently; compare
+        # the words, not the layout.
+        return {t["name"]: " ".join(t["description"].split()) for t in tools}
+
+    a = normalise(pair[0].call("tools/list")["result"]["tools"])
+    b = normalise(pair[1].call("tools/list")["result"]["tools"])
+    assert set(a) == set(b)
+    for name in sorted(a):
+        assert a[name] == b[name], (
+            f"{name} description differs:\n  python: {a[name][:300]}\n  node:   {b[name][:300]}"
+        )
+
+
+def test_handshake_instructions_agree(pair):
+    """`instructions` rides the initialize handshake and clients may put it in the
+    system prompt, so it is the routing rule for every MCP client. Both servers
+    must state the same one."""
+    a = pair[0].call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                    "clientInfo": {"name": "p", "version": "0"}})["result"]
+    b = pair[1].call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                    "clientInfo": {"name": "p", "version": "0"}})["result"]
+    assert " ".join((a.get("instructions") or "").split()) \
+        == " ".join((b.get("instructions") or "").split())
+    assert "set_config" in (a.get("instructions") or ""), "the config rule must be in it"

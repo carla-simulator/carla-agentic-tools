@@ -105,7 +105,21 @@ set_config derives the engine-specific variable that gates ue4/ue5/ue58.
 """
 
 def _version() -> str:
-    """Installed distribution version, or "" from a bare checkout."""
+    """This package's version, as the client will be shown it.
+
+    Read from `__version__`, which ships inside the package, rather than from
+    installed distribution metadata: the metadata is absent in a bare checkout
+    and stale whenever a different version is installed alongside, and either
+    way FastMCP then reports the *SDK* release instead. Distribution metadata is
+    the fallback for the reverse case, a package without __version__.
+    """
+    try:
+        from . import __version__
+
+        if __version__:
+            return __version__
+    except Exception:
+        pass
     try:
         from importlib.metadata import version
 
@@ -246,11 +260,10 @@ def list_skills(group: str | None = None) -> list[dict]:
     Makefile.
 
     Groups say what a skill binds to: `python-api` drives any running server,
-    `ue4`/`ue5` need that engine's checkout, `ros2` covers the native ROS 2
-    interface. `available: false` means the group's environment variable is not
-    set yet (see `unavailable_reason`) — the skill is still listed, because
-    building or checking out that environment is itself a valid next step.
-    Pass `group` to list one group only.
+    `ue4`/`ue5`/`ue58` need that engine's checkout, `ros2` covers the native ROS 2
+    interface. `available: false` means something it needs is not configured yet
+    (see `unavailable_reason`) — the skill is still listed, because obtaining that
+    thing is itself a valid next step. Pass `group` to list one group only.
     """
     out: list[dict] = []
     for d in _skill_dirs():
@@ -274,8 +287,10 @@ def list_skills(group: str | None = None) -> list[dict]:
 def read_skill(name: str) -> str:
     """Return a skill's full SKILL.md — the step-by-step procedure and its gotchas.
 
-    Call after list_skills once a skill matches the task, and read it before
-    running the commands it describes. `name` is a name from list_skills.
+    Call after list_skills once a skill matches the task, and read it before running
+    the commands it describes. The first line is the skill's absolute directory: the
+    document's own `scripts/...` paths are relative to it, and your working
+    directory is not. `name` is a name from list_skills.
     """
     d = _find_skill(name)
     if d is None:
@@ -296,9 +311,11 @@ def read_skill(name: str) -> str:
 def check_prerequisites(name: str) -> str:
     """Run a skill's read-only prerequisite checks and return its PASS/WARN/FAIL report.
 
-    Call before executing a skill to confirm the environment is ready — checks
-    disk, tools, and whether UE4/CARLA are in place. Read-only; does not modify
-    the system. `name` is a name from list_skills.
+    Call before executing a skill to confirm the environment is ready. Read-only;
+    does not modify the system. When the check fails, the report ends in a `needs`
+    section naming the paths that are missing or unusable, with candidates found on
+    this machine — ask the user to choose and record it with set_config.
+    `name` is a name from list_skills.
     """
     d = _find_skill(name)
     if d is None:

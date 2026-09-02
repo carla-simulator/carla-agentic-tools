@@ -24,14 +24,20 @@ removes them.
 Works in async mode (the default); sync is optional and only needs the TM put in
 sync too — which `spawn` does automatically when the world is synchronous.
 
+**The Traffic Manager lives in the client process that created it.** So a
+spawn that exits leaves the vehicles registered with a dead TM: they sit at
+`throttle 0.00` for ever, in async *and* sync. Pass **`--hold`** to keep the TM
+open (Ctrl+C releases it, and the vehicles then coast to a stop). Measured on
+0.10.0: without `--hold`, 0/50 vehicles move; with it, 49/50 move.
+
 ## Instructions
 
 ```
 Progress:
 - [ ] Step 1: Check prerequisites (bash scripts/check_env.sh), clear FAILs
-- [ ] Step 2: Spawn N vehicles (they start driving on autopilot immediately)
+- [ ] Step 2: Spawn N vehicles with --hold (the TM dies with the process without it)
 - [ ] Step 3: Verify visually / via the world-data skill; spawn reports its count
-- [ ] Step 4: Destroy when done
+- [ ] Step 4: Ctrl+C the held process, then destroy when done
 ```
 
 Commands need `CARLA_HOST`/`CARLA_PORT`/`TM_PORT` from `scripts/env.sh`.
@@ -49,8 +55,9 @@ bash scripts/check_env.sh
 ```bash
 source scripts/env.sh
 
-# 40 vehicles driving around on autopilot
-python3 scripts/vehicles.py spawn --count 40
+# 40 vehicles driving around on autopilot — --hold keeps the TM (and so the
+# driving) alive; without it they spawn, then freeze when this command returns
+python3 scripts/vehicles.py spawn --count 40 --hold
 
 # four-wheeled cars only, reproducible
 python3 scripts/vehicles.py spawn --count 30 --safe --seed 42
@@ -117,8 +124,9 @@ topics: [[control-vehicle]].
 
 User says: "spawn 50 cars driving around"
 
-`spawn --count 50`. They immediately drive on autopilot; the command reports how
-many spawned.
+`spawn --count 50 --hold`. They drive on autopilot for as long as that command
+runs; it reports how many spawned. Drop `--hold` only if you want them placed
+and stationary.
 
 **Example 2: reproducible car-only traffic**
 
@@ -146,10 +154,15 @@ User says: "clear the traffic"
 Cause: count exceeds spawn points, or points were occupied.
 Solution: expected; the map has a fixed number of spawn points (one car each).
 
-**Problem: vehicles spawn but don't move**
-Cause: world is in sync mode but the TM is not ticking, or `--no-autopilot`.
-Solution: `spawn` sets the TM sync when the world is sync — then tick the world
-(set-world-settings). Without `--no-autopilot` they drive in async immediately.
+**Problem: vehicles spawn but don't move (throttle stays 0.00)**
+Cause: most often the spawning process exited, taking its Traffic Manager with
+it — the vehicles are enrolled with a TM that no longer exists. Verified on
+0.10.0 in both async and sync, and it is *not* a sync/TM mismatch: forcing the
+TM async afterwards changes nothing, because the TM is gone.
+Solution: spawn with `--hold`, or keep your own long-lived client holding
+`client.get_trafficmanager(<port>)`. Re-registering `set_autopilot` from a new
+process is not enough on its own. Other causes: `--no-autopilot`, or a sync
+world with nothing calling `world.tick()` (set-world-settings).
 
 **Problem: vehicles jitter / freeze in sync mode**
 Cause: world sync but TM async (mismatch).

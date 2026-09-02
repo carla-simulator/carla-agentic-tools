@@ -102,3 +102,25 @@ def test_npm_entry_point_exists_and_is_executable():
     assert entry.is_file(), f"{bin_rel} is missing"
     assert os.access(entry, os.X_OK), f"{bin_rel} is not executable"
     assert entry.read_text().startswith("#!"), "no shebang, so `npx` cannot exec it"
+
+
+def test_reported_version_ignores_stale_distribution_metadata():
+    """serverInfo.version must come from the package, not from what is installed.
+
+    Reading distribution metadata reports the wrong version whenever a different
+    release is installed alongside the checkout, and nothing at all from a bare
+    checkout — in which case FastMCP falls back to naming the MCP SDK release.
+    """
+    import importlib.metadata as md
+
+    sys.path.insert(0, str(REPO / "src"))
+    import carla_agentic_tools.server as server
+
+    original = md.version
+    try:
+        md.version = lambda name: "9.9.9-wrong"
+        assert server._version() == _pyproject_version()
+        md.version = lambda name: (_ for _ in ()).throw(md.PackageNotFoundError(name))
+        assert server._version() == _pyproject_version()
+    finally:
+        md.version = original
