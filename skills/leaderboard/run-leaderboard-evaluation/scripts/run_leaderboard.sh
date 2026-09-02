@@ -15,6 +15,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
+# env.sh runs `set -euo pipefail`, and sourcing it applies -e to THIS shell. This
+# wrapper must survive a non-zero exit from the tool it runs, or its verification
+# and cleanup are skipped precisely when a run failed.
+set +e
+
 
 [ -n "${LEADERBOARD_ROOT}" ] || { echo "LEADERBOARD_ROOT is not set — run check_env.sh" >&2; exit 2; }
 : "${TEAM_AGENT:=${LEADERBOARD_ROOT}/leaderboard/autoagents/npc_agent.py}"
@@ -116,7 +121,10 @@ echo "[lb] progress:  python3 -c \"import json;print(json.load(open('${CHECKPOIN
 echo
 
 cd "${LEADERBOARD_ROOT}"
-"${PYTHON}" "${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py" "${ARGS[@]}" "$@"
+# -u matters: a route is 10-25 minutes and Python block-buffers stdout whenever
+# it is not a tty, so `bash run_leaderboard.sh > log` otherwise shows nothing at
+# all until the run ends — indistinguishable from a hang.
+"${PYTHON}" -u "${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py" "${ARGS[@]}" "$@"
 RC=$?
 echo "[lb] evaluator exited ${RC}"
 echo "[lb] read the results:  python3 ../read-leaderboard-results/scripts/read_results.py ${CHECKPOINT_ENDPOINT}"

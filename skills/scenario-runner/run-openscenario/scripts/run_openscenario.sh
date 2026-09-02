@@ -13,6 +13,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
+# env.sh runs `set -euo pipefail`, and sourcing it applies -e to THIS shell. This
+# wrapper must survive a non-zero exit from the tool it runs, or its verification
+# and cleanup are skipped precisely when a run failed.
+set +e
+
 
 CMD="${1:-}"
 FILE="${2:-}"
@@ -137,7 +142,7 @@ run|run2)
   FLAG=--openscenario; [ "${CMD}" = "run2" ] && FLAG=--openscenario2
   ARGS=("${FLAG}" "$(cd "$(dirname "${FILE}")" && pwd)/$(basename "${FILE}")"
         --host "${CARLA_HOST}" --port "${CARLA_PORT}" --trafficManagerPort "${CARLA_TM_PORT}"
-        --timeout "${TIMEOUT:-10}")
+        --timeout "${TIMEOUT:-120}")
   if [ -n "${PARAMS:-}" ]; then
     if [ "${CMD}" = "run2" ]; then
       echo "[run] NOTE PARAMS is ignored for OpenSCENARIO 2.0 (--openscenarioparams needs --openscenario)"
@@ -176,7 +181,9 @@ PY
   echo "[run] ${PYTHON} scenario_runner.py ${ARGS[*]}"
   echo "[run] NOTE the OSC timeout is hard-coded to 100000s; interrupt a stalled run yourself"
   cd "${SCENARIO_RUNNER_ROOT}"
-  "${PYTHON}" scenario_runner.py "${ARGS[@]}"
+  # -u: Python block-buffers stdout when it is not a tty, so redirecting a long
+  # run to a log otherwise shows nothing until it finishes.
+  "${PYTHON}" -u scenario_runner.py "${ARGS[@]}"
   RC=$?
   echo "[run] scenario_runner exited ${RC}"
   exit ${RC}

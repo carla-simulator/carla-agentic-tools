@@ -140,9 +140,16 @@ def main() -> None:
         for t in sorted(by):
             names = [c["name"] for c in by[t]]
             towns = sorted({c["town"] for c in by[t]})
-            print(f"{t:38} {len(names):2} config(s)  towns: {','.join(towns)}")
+            missing = "" if t in cls else "   <- NO CLASS: these configs cannot run"
+            print(f"{t:38} {len(names):2} config(s)  towns: {','.join(towns)}{missing}")
             print(f"{'':38}   group:{t}")
-        print(f"\n{len(cfg)} configs, {len(by)} runnable types")
+        # A type present in the XML but with no class behind it is not runnable.
+        # ScenarioRunner may still *find* a same-named object — an atomic behaviour
+        # leaked into a scenario module's namespace — and fail constructing it.
+        broken = sorted(t for t in by if t not in cls)
+        print(f"\n{len(cfg)} configs, {len(by) - len(broken)} runnable types"
+              + (f", {len(broken)} with no class: {', '.join(broken)}" if broken else ""))
+        print("  --check lists the affected configs")
         return
 
     shown = [c for c in cfg if town is None or c["town"] == town]

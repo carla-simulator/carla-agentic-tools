@@ -15,13 +15,19 @@
 #   RECORD=dir      CARLA recorder + criteria json, relative to SCENARIO_RUNNER_ROOT
 #   WAIT_FOR_EGO=1  attach to an existing ego instead of spawning one
 #   DEBUG=1         print the behaviour tree each tick
-#   TIMEOUT         client timeout seconds (default 10)
+#   TIMEOUT         client timeout seconds (default 120)
+#   MAX_WALL        wall-clock guard seconds (default 1800, 0 = none)
 #   CONFIG_FILE     extra scenario config xml
 #   ADDITIONAL      extra scenario implementation .py
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
+# env.sh runs `set -euo pipefail`, and sourcing it applies -e to THIS shell. This
+# wrapper must survive a non-zero exit from the tool it runs, or its verification
+# and cleanup are skipped precisely when a run failed.
+set +e
+
 
 SCENARIO="${1:-}"
 if [ -z "${SCENARIO}" ]; then
@@ -35,7 +41,11 @@ RELOAD="${RELOAD:-1}"
 SYNC="${SYNC:-0}"
 FRAME_RATE="${FRAME_RATE:-20}"
 REPETITIONS="${REPETITIONS:-1}"
-TIMEOUT="${TIMEOUT:-10}"
+# ScenarioRunner defaults its own client_timeout to 120 s; passing --timeout
+# overrides that. 10 s is far too low against an editor, where switching
+# between large maps routinely takes minutes and the client gives up while
+# the load still completes.
+TIMEOUT="${TIMEOUT:-120}"
 
 # --- preflight: does the requested scenario exist, and on which map? ----------
 # scenario_runner.py's own failure for a bad name is a bare "not supported ...
@@ -131,7 +141,48 @@ echo "[run] ${PYTHON} scenario_runner.py ${ARGS[*]}"
 echo "[run] NOTE most scenarios need something to drive the ego:"
 echo "[run]       ${PYTHON} ${SCENARIO_RUNNER_ROOT}/manual_control.py"
 cd "${SCENARIO_RUNNER_ROOT}"
-"${PYTHON}" scenario_runner.py "${ARGS[@]}"
-RC=$?
+# -u: Python block-buffers stdout when it is not a tty, so redirecting a long
+# run to a log otherwise shows nothing until it finishes.
+LOG="$(mktemp)"
+# scenario_runner can print its verdict and then never exit — the unsupported-name
+# path destroys the ego and hangs. Without a wall-clock guard that hangs the caller
+# too, and the verification below never gets to run. 30 min is far beyond any
+# single scenario; raise MAX_WALL for a long --repetitions sweep, 0 disables it.
+MAX_WALL="${MAX_WALL:-1800}"
+if [ "${MAX_WALL}" != "0" ]; then
+  timeout --foreground -k 10 "${MAX_WALL}" "${PYTHON}" -u scenario_runner.py "${ARGS[@]}" 2>&1 | tee "${LOG}"
+  RC=${PIPESTATUS[0]}
+  [ "${RC}" -eq 124 ] && echo "[run] wall-clock guard fired after ${MAX_WALL}s"
+else
+  "${PYTHON}" -u scenario_runner.py "${ARGS[@]}" 2>&1 | tee "${LOG}"
+  RC=${PIPESTATUS[0]}
+fi
 echo "[run] scenario_runner exited ${RC}"
+
+# scenario_runner.py catches its own exceptions and still returns 0, so the exit
+# code alone reports success for a run that never started. Confirm the artifact:
+# a scenario that actually ran prints a criteria table.
+if grep -q "Criteria Information" "${LOG}"; then
+  echo "[run] PASS a criteria report was produced"
+  grep -qE "GLOBAL RESULT.*(FAILURE|TIMEOUT)" "${LOG}" \
+    && echo "[run] NOTE the scenario ran but did not pass — most need a driver for the ego"
+elif grep -qE "not supported .*Exiting|no scenario with name" "${LOG}"; then
+  # SR prints the scenario TYPE here, not the config name. The config can be
+  # present in the XML while the class that implements it was deleted.
+  echo "[run] FAIL ScenarioRunner has no implementation for that scenario type on"
+  echo "[run]      this branch, or the config name is wrong. A config listed in the"
+  echo "[run]      XML with no class behind it cannot run."
+  echo "[run]      python3 ${HERE}/list_scenarios.py --types   shows what resolves"
+  RC=1
+elif grep -q "load_world" "${LOG}" && grep -q "std::exception" "${LOG}"; then
+  echo "[run] FAIL the map did not load in time. Loading one large map from another"
+  echo "[run]      in the editor can exceed the client timeout; raise TIMEOUT, or"
+  echo "[run]      load the town first and re-run with RELOAD=0."
+  RC=1
+else
+  echo "[run] FAIL no criteria report — the scenario did not complete. Last lines:"
+  tail -5 "${LOG}" | sed 's/^/[run]        /'
+  [ "${RC}" -eq 0 ] && RC=1
+fi
+rm -f "${LOG}"
 exit ${RC}

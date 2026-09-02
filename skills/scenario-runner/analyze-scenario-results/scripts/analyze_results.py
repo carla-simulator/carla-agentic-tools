@@ -78,10 +78,16 @@ def parse_json(path: Path) -> dict | None:
                 for c in data[key]:
                     if isinstance(c, dict):
                         crits.append({"name": c.get("name") or c.get("criterion", "?"),
-                                      "status": str(c.get("test_status") or c.get("status", "?")),
-                                      "actual": c.get("actual_value"),
-                                      "expected": c.get("expected_value_success")})
-                return {"kind": "result", "criteria": crits}
+                                      "status": criterion_status(c),
+                                      "actual": c.get("actual_value", c.get("actual")),
+                                      "expected": c.get("expected_value_success",
+                                                        c.get("expected")),
+                                      "optional": bool(c.get("optional", False))})
+                # ScenarioRunner also records the run's own verdict; keep it, because
+                # a scenario can fail for reasons no single criterion reports.
+                return {"kind": "result", "criteria": crits,
+                        "overall": (None if "success" not in data
+                                    else ("SUCCESS" if data["success"] else "FAILURE"))}
     return {"kind": "unknown", "criteria": crits, "raw": data}
 
 
@@ -118,8 +124,25 @@ def load(path: Path) -> dict:
     return parse_txt(path)
 
 
+def criterion_status(c: dict) -> str:
+    """Normalise the several shapes ScenarioRunner has written over time.
+
+    From 0.9.15 the JSON writer emits a BOOLEAN `success` per criterion
+    (result_writer.py), with no `test_status` field at all. Reading only
+    `test_status`/`status` left every criterion as "?", which `failed()` then
+    counted as a pass — so a failing run was reported as "all passed".
+    """
+    for key in ("test_status", "status"):
+        if c.get(key) is not None:
+            return str(c[key])
+    if isinstance(c.get("success"), bool):
+        return "SUCCESS" if c["success"] else "FAILURE"
+    return "?"
+
+
 def failed(c: dict) -> bool:
-    return "FAIL" in c["status"].upper() or "ERROR" in c["status"].upper()
+    st = c["status"].upper()
+    return "FAIL" in st or "ERROR" in st
 
 
 def cmd_summary(args) -> None:
@@ -136,8 +159,14 @@ def cmd_summary(args) -> None:
             print(f"{name:38} {stamp:21} {'-':>5} {'-':>5}  (no criteria parsed from {f.suffix}: {res['kind']})")
             continue
         bad = [c["name"] for c in crits if failed(c)]
-        any_fail |= bool(bad)
-        print(f"{name:38} {stamp:21} {len(crits):>5} {len(bad):>5}  {', '.join(bad) or 'all passed'}")
+        # A run can be marked failed with every criterion green (an exception mid
+        # scenario, a watchdog fire). Trust the recorded verdict over the tally.
+        overall = res.get("overall")
+        note = ", ".join(bad) or "all passed"
+        if overall == "FAILURE" and not bad:
+            note = "run marked FAILED with no failing criterion"
+        any_fail |= bool(bad) or overall == "FAILURE"
+        print(f"{name:38} {stamp:21} {len(crits):>5} {len(bad):>5}  {note}")
     if args.verbose:
         print()
         for f in files:

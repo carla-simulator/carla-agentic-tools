@@ -2,7 +2,7 @@
 name: run-scenario
 description: Runs a single ScenarioRunner Python scenario (or a whole group) against a running CARLA server — FollowLeadingVehicle, ControlLoss, DynamicObjectCrossing, SignalizedJunctionLeftTurn and the rest of srunner/examples — in sync or async mode, with result output, recording and manual/agent control of the ego. Lists what is runnable on the checked-out branch and on the loaded map. Use when the user asks to "run a scenario", "test FollowLeadingVehicle", "list scenarios", "run a CARLA traffic scenario", or reports a scenario that is "not supported".
 license: MIT
-compatibility: Any OS with a scenario_runner checkout, the CARLA PythonAPI importable, and a running CARLA server. No UE4/UE5 build needed. Scenario availability and town names depend on the branch (master = UE4/0.9.16, ue5-master = UE5/0.10.0).
+compatibility: Any OS with a scenario_runner checkout, the CARLA PythonAPI importable, and a running CARLA server. No UE4/UE5 build needed. Scenario availability and town names depend on the branch (master = UE4/0.9.16, ue5-master = UE5/0.10.0, ue58-dev = UE5.8/0.10.0 with towns 1-5 + Town10HD as _Opt).
 metadata:
   group: scenario-runner
   prerequisites: scripts/check_env.sh
@@ -39,7 +39,8 @@ source scripts/env.sh
 bash scripts/check_env.sh
 
 python3 scripts/list_scenarios.py                 # every config, its type and town
-python3 scripts/list_scenarios.py --town Town04   # only what fits the loaded map
+python3 scripts/list_scenarios.py --town Town04_Opt   # only what fits the loaded map
+python3 scripts/list_scenarios.py --check             # configs whose type or town does not resolve
 python3 scripts/list_scenarios.py --here          # only what fits the *running* server's map
 python3 scripts/list_scenarios.py --types         # class -> configs, incl. route-only classes
 ```
@@ -88,7 +89,8 @@ Knobs (all env vars on `run_scenario.sh`):
 | `RECORD=dir` | CARLA recorder log + a criteria JSON, relative to `$SCENARIO_RUNNER_ROOT` |
 | `WAIT_FOR_EGO=1` | attach to an ego someone else spawned instead of spawning one |
 | `DEBUG=1` | print the behaviour tree every tick |
-| `TIMEOUT` | client timeout, default 10 s |
+| `TIMEOUT` | client timeout, default 120 s — an editor map switch needs it |
+| `MAX_WALL` | wall-clock guard, default 1800 s; `0` disables. ScenarioRunner can print its verdict and never exit |
 
 ### Step 4: Somebody has to drive
 
@@ -133,14 +135,15 @@ the criteria report prints at the end.
 
 **Example 2: "test how my controller handles a pedestrian running out"**
 
-`DynamicObjectCrossing_*` (Town02–Town05). Run with `SYNC=1 OUTPUT=1 JSON=1`, and
+`DynamicObjectCrossing_*` (Town02_Opt–Town05_Opt on ue58-dev; unsuffixed on older
+branches — `list_scenarios.py` prints the real town). Run with `SYNC=1 OUTPUT=1 JSON=1`, and
 drive the ego with an agent through [[run-route-scenario]] so the run is
 reproducible.
 
 **Example 3: "run all the control-loss scenarios and give me the pass/fail"**
 
 `OUTPUT=1 JSON=1 OUTPUT_DIR=./results bash scripts/run_scenario.sh group:ControlLoss`
-— 15 configs across Town01–Town05, each reloading its own map. Summarise with
+— configs spread across several towns, each reloading its own map. Summarise with
 [[analyze-scenario-results]].
 
 ## Troubleshooting
@@ -149,10 +152,10 @@ reproducible.
 Cause: the config name is not in `srunner/examples/` for this branch, or
 `SCENARIO_RUNNER_ROOT` is unset so the scenario glob resolves to `./`.
 Solution: `python3 scripts/list_scenarios.py` for the real list; export
-`SCENARIO_RUNNER_ROOT`. On `ue5-master`, `change_lane.py`, `cut_in.py`,
-`freeride.py` and `no_signal_junction_crossing.py` were deleted — and
-`ChangeLane.xml` / `CutIn.xml` were left behind, so those names *look* available
-and cannot run.
+`SCENARIO_RUNNER_ROOT`. Scenario modules were removed on the UE5 branches
+(`change_lane.py`, `cut_in.py`, `freeride.py`, `no_signal_junction_crossing.py`),
+so a config naming one of those types cannot run wherever its XML survives.
+`--check` is the fast way to see it.
 
 **Problem: `The CARLA server uses the wrong map: TownXX / This scenario requires to use map: TownYY`**
 Cause: `RELOAD=0` (or no `--reloadWorld`) with a mismatched map.
@@ -162,10 +165,14 @@ Solution: drop `RELOAD=0`, or load the map first with [[load-map]].
 Cause: no driver for the ego (see Step 4).
 Solution: `manual_control.py`, or route mode with an agent.
 
-**Problem: `--scenario HighwayCutIn_1` cannot load the map**
-Cause: that config says `town="Highway"`, which is not a CARLA map. It is broken
-in the repo, not in your setup.
-Solution: use the route-based `HighwayCutIn` scenario instead.
+**Problem: a config is listed but the run dies constructing the scenario**
+Cause: the XML names a `type` with no scenario class behind it. The name may still
+*resolve* to something that is not a scenario — an atomic behaviour of the same
+name imported into a scenario module's namespace will be constructed and fail with
+`<Type>.__init__() got an unexpected keyword argument 'world'`.
+Solution: `python3 scripts/list_scenarios.py --check` lists every config whose
+type or town does not resolve. It should report zero; a non-zero count means an
+XML references a class that is not there.
 
 **Problem: the world is frozen after a run; other clients time out**
 Cause: interrupted `SYNC=1` run left synchronous mode on.

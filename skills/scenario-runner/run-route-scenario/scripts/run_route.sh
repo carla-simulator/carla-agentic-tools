@@ -12,6 +12,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${HERE}/env.sh"
+# env.sh runs `set -euo pipefail`, and sourcing it applies -e to THIS shell. This
+# wrapper must survive a non-zero exit from the tool it runs, or its verification
+# and cleanup are skipped precisely when a run failed.
+set +e
+
 
 CMD="${1:-}"; ROUTES="${2:-}"; RID="${3:-}"
 [ -n "${SCENARIO_RUNNER_ROOT}" ] || { echo "SCENARIO_RUNNER_ROOT is not set — run check_env.sh" >&2; exit 2; }
@@ -157,7 +162,9 @@ trap reset_async EXIT INT TERM
 echo "[run] ${PYTHON} scenario_runner.py ${ARGS[*]}"
 echo "[run] route mode forces --reloadWorld and --sync; the world WILL be reloaded"
 cd "${SCENARIO_RUNNER_ROOT}"
-"${PYTHON}" scenario_runner.py "${ARGS[@]}"
+# -u: Python block-buffers stdout when it is not a tty, so redirecting a long
+# run to a log otherwise shows nothing until it finishes.
+"${PYTHON}" -u scenario_runner.py "${ARGS[@]}"
 RC=$?
 echo "[run] scenario_runner exited ${RC}"
 exit ${RC}

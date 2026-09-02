@@ -49,6 +49,13 @@ else
     if { [ "${WANT}" = "leaderboard-2.1" ] && [ "${SRB}" = "leaderboard-2.0" ]; } \
     || { [ "${WANT}" = "leaderboard-2.0" ] && [ "${SRB}" = "leaderboard-2.1" ]; }; then
       ok "branch ${SRB} is byte-identical to ${WANT} in scenario_runner — fine"
+    elif [ "${SRB}" = "$(carla_lb_branch)" ]; then
+      # Both repos on the same branch name is a coordinated fork line (a port
+      # advancing the pair together, e.g. ue58-dev on both). That is a matched
+      # pair by construction, so requiring the upstream branch NAME here would
+      # reject a valid setup. What actually matters is that the leaderboard's
+      # srunner imports resolve, which the Python client section tests.
+      ok "both repos on '${SRB}' — a coordinated fork line, treated as matched"
     else
       bad "scenario_runner is on '${SRB}' but this leaderboard needs '${WANT}'"
       bad "  master/ue5-master do NOT work: the route scenario classes differ"

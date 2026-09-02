@@ -78,12 +78,20 @@ carla_sr_flavor() {
   case "$(carla_sr_branch)" in
     master|0.9.1[3-9]*)      echo "ue4"; return ;;
     ue5-master)              echo "ue5"; return ;;
+    ue58-dev|ue58-*)         echo "ue58"; return ;;
     leaderboard-2.0|leaderboard-2.1) echo "lb2"; return ;;
     leaderboard|leaderboard-1.0)     echo "lb1"; return ;;
   esac
   if [ -d "${SCENARIO_RUNNER_ROOT}/srunner/scenic" ] \
      && [ ! -f "${SCENARIO_RUNNER_ROOT}/srunner/scenarios/change_lane.py" ]; then
-    echo "ue5"
+    # ue58-dev retargeted every towns-1-9 config onto the _Opt map names, which
+    # is what makes those 89 configs runnable at all; ue5-master still names the
+    # non-_Opt towns, which do not exist in the UE5 content.
+    if grep -rlq 'town="Town0[1-9]_Opt"' "${SCENARIO_RUNNER_ROOT}/srunner/examples" 2>/dev/null; then
+      echo "ue58"
+    else
+      echo "ue5"
+    fi
   elif [ -f "${SCENARIO_RUNNER_ROOT}/srunner/scenarios/route_scenario.py" ]; then
     echo "unknown"
   else
