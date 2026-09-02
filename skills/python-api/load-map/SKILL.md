@@ -124,6 +124,32 @@ Verifying it needs a ROS 2 consumer ([[visualize-ros-rviz]]); from the RPC side,
 disagreement with `ros2 topic list` after a map change is expected, for the reason
 above.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+**Map layers are a silent no-op on 0.10.0.** The calls succeed, return without
+error, and change nothing. Measured on Town10HD_Opt with a 40-ray sweep at 3 m
+height: `Buildings` geometry was hit 9 times before `unload_map_layer(
+MapLayer.Buildings)`, 9 times after, and 9 times again after reloading — and the
+server log records no streaming activity at all.
+
+The cause is content, not the API. `ACarlaGameModeBase::UnLoadMapLayer` still
+streams sublevels, and `ConvertMapLayerMaskToMapNames` matches layer names
+against `World->GetStreamingLevels()` — but the UE5 conversion **flattened the
+layers into the persistent level**. `Town10HD_Opt.umap` is 32.9 MB with **zero**
+`LevelStreaming` references on 0.10.0, against 158 KB with two on 0.9.x, where it
+streamed `T10HD_Buildings`, `T10HD_Props`, `T10HD_Foliage` and friends. The
+sublevel `.umap` files still sit in `Content/Carla/Maps/Sublevels/Town10HD_Opt/`
+as orphans, so nothing matches and nothing happens.
+
+To hide geometry on 0.10.0 use `enable_environment_objects` instead
+([[toggle-env-objects]]). `load_world`, `reload_world`,
+`get_available_maps`, `generate_opendrive_world` and the settings-preservation
+behaviour are all unchanged.
+
+`get_ego_spawn_points()` is new, and **UE 5.8 only** — spawn points the map author
+marked for the hero vehicle, a subset of `get_spawn_points()`. On 5.5 it raises
+`AttributeError` ([[check-ue5-limitations]]).
+
 ## Examples
 
 **Example 1: just switch town**

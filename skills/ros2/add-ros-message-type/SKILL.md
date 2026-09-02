@@ -19,6 +19,18 @@ loudly at build, or only on a peer's Jazzy console.
 Upstream reference: `Docs/ros2/adding_message_types.md` in the checkout. This
 skill adds the preflight, the wrapped hash computation, and the verify loop.
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+The hand-written-POD approach, the Fast-CDR serialize/deserialize pair, the
+RIHS01 type hash and the registration step are the same on 0.10.0 — there is
+still no IDL codegen.
+
+What differs is the neighbourhood: types live beside a larger set on 0.10.0
+(Autoware messages among them), and QoS moved from `PublisherQos.h` to
+`QosProfile.h`. If your new type is for a publisher, read [[add-ros-publisher]]
+first for the `BasicPublisher` refactor — a type added for a
+`CarlaPublisher`-shaped class will not compile there.
+
 ## Instructions
 
 ```

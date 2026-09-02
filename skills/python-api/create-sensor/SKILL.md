@@ -96,7 +96,7 @@ Topic layout (`spawn` prints the exact list):
 | `other.imu` | *(the base name itself)* | `sensor_msgs/Imu` |
 | `other.gnss` | *(the base name itself)* | `sensor_msgs/NavSatFix` |
 | `other.collision` | *(the base name itself)* | `carla_msgs/CarlaCollisionEvent` |
-| `other.lane_invasion`, `other.obstacle`, `other.rss`, gbuffer | **none** — no native publisher exists | — |
+| `other.lane_invasion`, `other.obstacle`, `other.rss` | **none** — no native publisher exists | — |
 
 Base name is `rt/carla/<ros_name>`, nested as
 `rt/carla/<parent ros_name>/<ros_name>` when attached; unnamed sensors become
@@ -118,6 +118,45 @@ practical notes:
 
 Read them with [[read-sensor]] `ros-info`, list everything with [[world-data]]
 `ros-topics`, and echo them with [[visualize-ros-rviz]].
+
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+The sensor catalogue is **larger** on 0.10.0. Live from a 0.10.0 server, the
+blueprints that do not exist on 0.9.x:
+
+| New blueprint | What it is |
+|---|---|
+| `sensor.camera.rgb_fisheye`, `.depth_fisheye`, `.semantic_segmentation_fisheye`, `.instance_segmentation_fisheye` | fisheye projections of the four cameras |
+| `sensor.camera.rt_lens` | ray-traced lens camera — **UE 5.8 only** |
+| `sensor.lidar.hss_lidar` | high-solid-state lidar model |
+| `sensor.other.autoware_gnss`, `sensor.other.vehicle_status` | Autoware-shaped GNSS and vehicle-status publishers — **UE 5.8 only** |
+
+**The RGB camera's attribute set is much smaller.** On 0.10.0 `sensor.camera.rgb`
+exposes 18 attributes: `image_size_x/y`, `fov`, `sensor_tick`, `role_name`,
+`ros_name`, `ros_topic_name`, `enable_postprocess_effects`, `post_process_profile`,
+`enable_dlss`, `dlss_screen_percentage` (both **UE 5.8 only**), `use_ray_tracing`,
+and the six `lens_*` distortion knobs. The per-shot photographic controls 0.9.x exposes —
+`bloom_intensity`, `fstop`, `iso`, `gamma`, `shutter_speed`,
+`motion_blur_intensity`, `chromatic_aberration_intensity`, `exposure_mode`,
+`lens_flare_intensity`, `blur_amount`, `slope`, `toe`, `tint` — are **not on the
+blueprint**, even though the definitions still exist in
+`ActorBlueprintFunctionLibrary.cpp`. Post-processing is selected wholesale
+instead, by naming a profile: `post_process_profile` (default `Default`) resolves
+to a JSON under `Content/Carla/Config/PostProcess/` — shipped are `Default.json`,
+`GoPro.json`, `Town10HD_Opt.json`, `Town_C.json`. So `--attr bloom_intensity=…`
+fails on 0.10.0; author or pick a profile.
+
+**ROS 2 enabling moved class, not concept.** `enable_for_ros` /
+`disable_for_ros` / `is_enabled_for_ros` live on `carla.Actor` in 0.9.x and on
+`carla.ServerSideSensor` in 0.10.0 (`PythonAPI/carla/src/Sensor.cpp:37-39`). A
+spawned server-side sensor *is* a `ServerSideSensor` on both, so `--ros` needs no
+version handling — but note the methods are absent from the `carla.Sensor` base
+class, which is what you get if you introspect the wrong type.
+
+`ros_topic_name` is new alongside `ros_name`: it overrides the generated topic
+exactly, rather than contributing a segment. `World.set_publish_tf()` /
+`get_publish_tf()` are new too, controlling `rt/tf` globally instead of per
+sensor — those two are **UE 5.8 only** ([[check-ue5-limitations]]).
 
 ## Examples
 

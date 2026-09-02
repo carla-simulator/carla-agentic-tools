@@ -94,6 +94,8 @@ case "${MODE}" in
   echo)
     [ $# -ge 1 ] || { echo "[ros] usage: ros_view.sh echo /carla/map [N]" >&2; exit 2; }
     N="${2:-1}"
+    # NOTE: /carla/map exists on 0.9.x only — CarlaMapPublisher was dropped in
+    # 0.10.0, where this echo waits forever because nothing advertises the topic.
     # Latched topics (only /carla/map today) publish ONCE per episode, so a
     # default VOLATILE subscription waits forever for a sample that will not come.
     # Request transient_local for them, and --full-length so the OpenDRIVE string

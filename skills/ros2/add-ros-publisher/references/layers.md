@@ -40,7 +40,8 @@ publisher; a new RMW touches only middleware + factory.
 `/image`, `/camera_info` (`CarlaCameraPublisher`), `/point_cloud`
 (`CarlaPointCloudPublisher`, inherited by lidar/semantic-lidar/radar/DVS-cloud),
 and **no suffix** for IMU, GNSS and collision — they publish on the base name
-itself. Fixed names: `rt/clock`, `rt/tf`, `rt/carla/map`.
+itself. Fixed names: `rt/clock`, `rt/tf`, and — **on 0.9.x only** — `rt/carla/map`
+(`CarlaMapPublisher` is absent on 0.10.0).
 
 ### QoS
 
@@ -51,8 +52,10 @@ reliable + volatile + depth 1.
 
 - `PublisherQos::SensorData()` → best-effort. Use for image/point-cloud streams:
   a slow or vanished subscriber can then never block the publishing thread.
-- `TransientLocal` = ROS 2 "latched". Only `rt/carla/map` uses it, so late joiners
-  get the OpenDRIVE without waiting for a map change.
+- `TransientLocal` = ROS 2 "latched". On 0.9.x only `rt/carla/map` uses it, so
+  late joiners get the OpenDRIVE without waiting for a map change; on 0.10.0 that
+  publisher is gone, so nothing latches by default. The struct is also renamed
+  there: `middleware/QosProfile.h`, not `PublisherQos.h`.
 - Consumers must match: a reliable subscriber will not match a best-effort
   publisher.
 
@@ -60,7 +63,7 @@ reliable + volatile + depth 1.
 
 - `GetOrCreateSensor(type, actor)` — a `switch` over `ESensors`, one `case` per
   publisher, caching in `_publishers`. `nullptr` means "no native publisher"
-  (lane invasion, obstacle, RSS, world observer, GBuffer).
+  (lane invasion, obstacle, RSS, world observer).
 - Names: `GetActorRosName` → the `ros_name` attribute or `actor<id>`;
   `GetActorBaseTopicName` → `rt/carla/<name>`, or the parent's base + `/` + name
   when `_actor_parent_map` has an entry (`insert`, so the **immediate** parent

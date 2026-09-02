@@ -54,6 +54,22 @@ python3 scripts/telemetry.py show --id 137
 python3 scripts/telemetry.py show --filter '*prius*' --color 255,0,0
 ```
 
+## On CARLA 0.10.0 (the UE5 line: 5.5 and 5.8)
+
+`get_telemetry_data()` and `show_debug_telemetry()` both still exist on 0.10.0,
+and everything this skill reads — location, rotation, velocity, acceleration,
+angular velocity, `get_control()`, `get_wheel_steer_angle()` — is unchanged.
+
+The one field it touches on the physics control, `mass`, is also unchanged. Other
+physics fields were renamed wholesale by the Chaos rewrite; see
+[[control-vehicle]] for the mapping if you extend this skill to report them.
+
+**Sampling caveat that is not version-specific but bites hardest here:** in
+asynchronous mode `get_location()` on a just-spawned actor returns the origin
+until the first tick lands, so a "distance travelled" computed from it is really
+distance-from-origin. Wait for a tick (or two) after spawning before taking a
+first sample.
+
 ## Examples
 
 **Example 1: how fast is the ego**

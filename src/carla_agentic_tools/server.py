@@ -68,7 +68,13 @@ SKILLS_DIR = _resolve_skills_dir()
 GROUP_REQUIREMENTS = {
     "ue4": (("CARLA_UE4_ROOT", "CARLA_TARGET", "CARLA_PACKAGE_ROOT"),
             "a CARLA ue4-dev checkout or an extracted release"),
-    "ue5": (("CARLA_UE5_ROOT", "CARLA_TARGET"), "a CARLA ue5-dev checkout"),
+    # ue5 and ue58 are deliberately separate groups, not one engine-agnostic group:
+    # they track different CARLA branches (ue5-dev / ue58-dev) against different
+    # engine forks (ue5-dev-carla = UE 5.5, ue58-dev-carla = UE 5.8), and a skill
+    # that names the wrong engine branch sends the user into a multi-hour build of
+    # the wrong thing. If the branches converge later, merge the groups then.
+    "ue5": (("CARLA_UE5_ROOT",), "a CARLA ue5-dev checkout (UE 5.5)"),
+    "ue58": (("CARLA_UE58_ROOT",), "a CARLA ue58-dev checkout (UE 5.8)"),
     "scenario-runner": (("SCENARIO_RUNNER_ROOT",), "a scenario_runner checkout"),
     "leaderboard": (("LEADERBOARD_ROOT",), "a leaderboard checkout (plus its matching scenario_runner)"),
     "scenic": (("SCENIC_ROOT",), "a Scenic install"),
