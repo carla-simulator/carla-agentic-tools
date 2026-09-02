@@ -5,9 +5,11 @@ a `SKILL.md` plus executable scripts with its failure modes encoded, so an agent
 discovers the right procedure and checks its prerequisites instead of improvising
 from the Makefile.
 
-Nothing in a skill is client-specific — plain Markdown and POSIX shell/Python.
-A standalone [MCP](https://modelcontextprotocol.io) server serves them to any
-MCP client.
+Nothing in a skill is client-specific — plain Markdown and POSIX shell. A
+standalone [MCP](https://modelcontextprotocol.io) server serves them to any MCP
+client, and ships **twice**: on npm as a self-contained Node package, and on
+PyPI as a Python one. Same skills, same answers, no wrapper between them —
+`tests/test_node_parity.py` runs both and diffs what they return.
 
 This repo is independent of any CARLA checkout: it targets a **specific CARLA
 instance at runtime**, recorded on first use, so one install can drive any build.
@@ -17,12 +19,14 @@ instance at runtime**, recorded on first use, so one install can drive any build
 ```
 carla-agentic-tools/
 ├── pyproject.toml            # hatchling; maps skills/ into the wheel
-├── npm/                      # npx front door -> uvx -> the PyPI package
-├── src/carla_agentic_tools/
-│   ├── server.py             # MCP server: list_skills / read_skill / check_prerequisites
-│   │                         #   plus get_config / set_config
-│   └── config.py             # persisted paths + CARLA flavor detection
-├── tests/                    # structural checks the release gates on
+├── package.json              # the npm package; ships bin/ lib/ skills/
+├── bin/carla-agentic-tools.js # npx entry point
+├── lib/                      # the Node server: server.js, skills.js, config.js
+│                             #   zero dependencies, Node >= 12
+├── src/carla_agentic_tools/  # the Python server: server.py, config.py
+├── test/node_smoke.js        # `npm test`
+├── tests/                    # pytest, including the Node/Python parity checks
+├── upload.sh                 # publishes both, one confirmation each
 └── skills/
     ├── _common/env_common.sh # every env.sh loads the recorded paths through this
     ├── setup/                # get the pieces at all: download-carla, install-python-api,
@@ -48,26 +52,44 @@ environment is present (`available: false` plus a reason when e.g.
 `CARLA_UE4_ROOT` is unset); unavailable skills are still listed, because creating
 that environment is often the task at hand.
 
+## Two servers, one library
+
+The skills, and everything that decides which are usable, exist in both
+languages. Which one you install decides only what has to be on the machine:
+
+| | needs | get it with |
+|---|---|---|
+| **npm** | Node >= 12, nothing else | `npx -y @carla-simulator/agentic-tools` |
+| **PyPI** | Python >= 3.10 | `uvx carla-agentic-tools` |
+
+The npm package carries the skills in its own tarball and has **no runtime
+dependencies** — no Python, no `uv`, no install step at first run. The Python
+package is the same thing for people whose tooling is already Python.
+
+The skills themselves still shell out to `bash`, and the ones that drive the
+CARLA client need an interpreter with the `carla` wheel — that is the `PYTHON`
+key, part of the user's environment rather than the server's runtime. Building
+CARLA needs a CARLA checkout either way.
+
+Both read and write the same config file, so a path recorded through one is
+visible to the other.
+
 ## Install
 
-The server ships on PyPI with the skills inside the wheel:
-
 ```bash
-# npx (Node available)
+# npm — no Python needed
 npx -y @carla-simulator/agentic-tools
 
-# uvx (Python tooling; what the npx wrapper calls under the hood)
+# PyPI — if your tooling is already Python
 uvx carla-agentic-tools
-
-# or a durable install
-pipx install carla-agentic-tools
+pipx install carla-agentic-tools     # or a durable install
 ```
 
-The npm package is a thin wrapper: it finds `uvx`/`uv`/`pipx` and execs the
-Python server, pinning the *same* version, so `npx -y @carla-simulator/agentic-tools@0.2.0`
-and `uvx carla-agentic-tools@0.2.0` are the same server. It never
-`pip install`s into your environment, and it keeps stdout free for the MCP
-stream (diagnostics go to stderr).
+Both are the same server at the same version. Pick whichever runtime you already
+have; the section above says what each needs.
+
+Diagnostics go to stderr and stdio is inherited, never piped, so stdout stays a
+clean MCP stream and the client talks to the server directly.
 
 ## Registering with an MCP client
 
@@ -85,8 +107,8 @@ them before the skills that create them have run:
 }
 ```
 
-Swap `command`/`args` for `uvx` + `["carla-agentic-tools"]` if you would rather
-skip Node. Claude Code reads `.mcp.json` from the project directory; Cursor and
+Swap `command`/`args` for `uvx` + `["carla-agentic-tools"]` for the Python
+package instead. Claude Code reads `.mcp.json` from the project directory; Cursor and
 Claude Desktop take the same block in their own config. The CLI equivalent:
 
 ```bash
@@ -143,45 +165,31 @@ true` right after the install that enabled it, and stays that way next session.
 Work from a checkout when you are *writing* skills:
 
 ```bash
-pip install -e .                  # server from source
-pytest -q tests/                  # structural + MCP checks
-CARLA_SKILLS_DIR=$PWD/skills uvx carla-agentic-tools   # installed server, live skills
+pip install -e .                       # the Python server from source
+pytest -q tests/                       # structural + MCP + Node/Python parity
+node test/node_smoke.js                # the Node server (also `npm test`)
+CARLA_SKILLS_DIR=$PWD/skills uvx carla-agentic-tools   # a published server, live skills
 ```
 
-`CARLA_SKILLS_DIR` points a published server at a working tree, so you can edit a
-`SKILL.md` and re-run without reinstalling. `setup.sh` is the legacy convenience
-path (editable install + `.mcp.json` written into a CARLA checkout) and is now
-only for local development.
+`CARLA_SKILLS_DIR` points either server at a working tree, so you can edit a
+`SKILL.md` and re-run without reinstalling.
+
+Change how a skill is *selected* — the gating, the config keys, the detection
+markers — and you are editing two implementations. `tests/test_node_parity.py`
+runs both servers over stdio and diffs every answer, so a change made on one
+side only fails there rather than reaching a user.
 
 ## Releasing
 
-There is no release automation in this repo — publishing is manual and deliberate.
-
-Bump the version in **both** `pyproject.toml` and `npm/package.json`: the npm
-wrapper resolves *its own* version from PyPI, so a mismatch ships a front door
-pointing at a server that does not exist. Then:
-
 ```bash
-rm -rf dist && python -m build && python -m twine check dist/*
-python -m twine upload dist/*                    # PyPI  (or --repository testpypi)
-cd npm && npm publish --access public            # only AFTER PyPI succeeded
+bash upload.sh --check     # preflight and build, publish nothing
+bash upload.sh             # then confirm PyPI and npm separately
 ```
 
-PyPI first, npm second — the wrapper is useless until the version it pins exists.
-Before uploading, confirm the artifact really carries the skills, since a wheel
-that installs cleanly but ships an empty registry is this project's known failure
-mode:
-
-```bash
-python - <<'EOF'
-import glob, zipfile, collections
-n = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
-sk = [x for x in n if x.endswith("SKILL.md")]
-print(len(sk), "skills", dict(collections.Counter(x.split("/skills/")[1].split("/")[0] for x in sk)))
-assert len(sk) >= 30 and not [x for x in n if "__pycache__" in x]
-EOF
-pytest -q tests/
-```
+The version lives in `pyproject.toml`, `src/carla_agentic_tools/__init__.py` and
+`package.json`; `tests/test_version.py` fails on drift and `upload.sh` refuses to
+run. Neither index replaces a published version, and npm only allows unpublish
+within 72 hours, so each publish asks for a literal `yes`.
 
 ## Targeting a CARLA instance
 
@@ -267,7 +275,9 @@ its output with the skill's absolute directory. A new skill also needs its
 paths the user recorded — `tests/test_config.py` fails when one does not.
 
 Groups are directories: add `skills/ue5/` or `skills/scenic/` and register the
-environment variable that gates it in `GROUP_REQUIREMENTS` (`server.py`).
+variable that gates it in `GROUP_REQUIREMENTS` — in **both** `src/carla_agentic_tools/server.py`
+and `lib/skills.js`, or the two servers disagree about what is usable.
+`tests/test_node_parity.py` fails when they do.
 `skills/ue4/package-carla-ue4` is the worked example to model a new skill on.
 
 ## License

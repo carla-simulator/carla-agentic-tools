@@ -376,7 +376,7 @@ def _declared_vars(skill: Path) -> dict[str, tuple[str, bool]]:
 
 
 @mcp.tool()
-def get_config() -> dict:
+def get_config() -> dict[str, object]:
     """Report every configurable path, its value, and where that value came from.
 
     Call this before asking the user anything: a key already set in the

@@ -55,3 +55,50 @@ def test_server_reports_its_own_version():
     reported = _reported_version(server)
     assert reported == _pyproject_version(), \
         f"serverInfo.version is {reported!r}, expected {_pyproject_version()}"
+
+
+# --- the npm package -------------------------------------------------------
+
+def _npm_package() -> dict:
+    import json
+    return json.loads((REPO / "package.json").read_text())
+
+
+def test_npm_version_matches_pyproject():
+    """Two packages, one codebase: a user on npx and a user on uvx must be told
+    the same version, and `serverInfo.version` is read from whichever they ran."""
+    got = _npm_package()["version"]
+    assert got == _pyproject_version(), (
+        f"package.json says {got}, pyproject.toml says {_pyproject_version()}"
+    )
+
+
+def test_npm_ships_what_it_declares():
+    """A file named in `files` but absent ships a package missing part of itself."""
+    for name in _npm_package()["files"]:
+        target = REPO / name.rstrip("/")
+        assert target.exists(), f"package.json lists {name}, which is missing"
+
+
+def test_npm_ships_the_skills_and_no_python():
+    """The npm package must stand alone — that is the whole point of it.
+
+    The skills are the product, so they travel in the tarball; and nothing in
+    `files` may pull in the Python half, or `npx` users download a server they
+    cannot run twice over.
+    """
+    files = _npm_package()["files"]
+    assert "skills/" in files, "the skills must ship in the npm tarball"
+    assert not any(f.startswith(("src/", "tests/")) for f in files), \
+        "the Python implementation must not ship to npm"
+    assert not _npm_package().get("dependencies"), \
+        "a runtime dependency defeats the point: npx would install at first run"
+
+
+def test_npm_entry_point_exists_and_is_executable():
+    import os
+    bin_rel = _npm_package()["bin"]["carla-agentic-tools"]
+    entry = REPO / bin_rel
+    assert entry.is_file(), f"{bin_rel} is missing"
+    assert os.access(entry, os.X_OK), f"{bin_rel} is not executable"
+    assert entry.read_text().startswith("#!"), "no shebang, so `npx` cannot exec it"
