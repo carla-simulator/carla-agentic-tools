@@ -12,6 +12,11 @@ metadata:
 
 # Import a vehicle into CARLA
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 ```bash
 python3 scripts/import_vehicle.py ~/models/SK_MyVan.fbx \
     --make ford --model transit --base-type truck --generation 3 --wheel-radius 40

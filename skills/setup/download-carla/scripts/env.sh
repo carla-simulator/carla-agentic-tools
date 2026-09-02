@@ -12,6 +12,10 @@
 #
 # Sets no shell options: this file is sourced.
 
+# Paths the install skills recorded, for keys with no value yet; an exported
+# variable still wins. See skills/_common/env_common.sh.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 export CARLA_DOWNLOAD_DIR="${CARLA_DOWNLOAD_DIR:-${HOME}/carla-downloads}"
 
 # The interpreter used to run this skill's own script. Unlike the rest of the

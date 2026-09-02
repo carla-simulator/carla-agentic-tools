@@ -11,6 +11,11 @@ metadata:
 
 # Install ScenarioRunner
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 ScenarioRunner is pure Python — **there is nothing to build**. Installing it is
 three decisions and one `pip install`:
 
@@ -31,7 +36,7 @@ Progress:
 - [ ] Step 2: Pick the branch from the matrix
 - [ ] Step 3: Clone or check out that branch
 - [ ] Step 4: Install requirements into the interpreter that has `carla`
-- [ ] Step 5: Export the environment and verify (bash scripts/check_env.sh)
+- [ ] Step 5: Record `SCENARIO_RUNNER_ROOT` with `set_config`, then verify (bash scripts/check_env.sh)
 ```
 
 ### Step 1-2: Which branch
@@ -110,6 +115,19 @@ before any scenario runs. This is the single most common install failure.
 `SCENARIO_RUNNER_ROOT` is also read *at runtime* by ScenarioRunner itself, to
 locate `srunner/scenarios/*.py` and to resolve `--record` paths. Exporting it is
 not just for the shell's benefit.
+
+### Recording the path
+
+An `export` lasts until the shell exits. Persist `SCENARIO_RUNNER_ROOT` instead, so the
+next session — and `list_skills` — still knows where this went:
+
+```
+set_config({"SCENARIO_RUNNER_ROOT": "<the checkout path>"})
+```
+
+Without it the group this just enabled keeps reporting `available: false`,
+and the next skill re-detects from scratch. `CARLA_ROOT` is the only CARLA
+path to record: `set_config` derives the engine-specific variable itself.
 
 ## Examples
 

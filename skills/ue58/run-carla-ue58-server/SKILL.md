@@ -11,6 +11,11 @@ metadata:
 
 # Run a CARLA UE 5.8 server
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Three ways to get a server, and the choice matters more than on UE4:
 
 | Mode | What it is | Use it when |

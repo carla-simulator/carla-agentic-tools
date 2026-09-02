@@ -3,6 +3,12 @@
 # Exits non-zero only on hard blockers: no interpreter, no pip.
 # A missing carla client is a WARN — install order is the skill's job to fix.
 set -uo pipefail
+
+# This skill has no env.sh (nothing to resolve before it runs), so it loads the
+# recorded paths itself — otherwise a PYTHON set through set_config would be
+# invisible to the one skill whose whole job is picking that interpreter.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 PYTHON="${PYTHON:-python3}"
 rc=0
 ok(){   echo "  PASS $*"; }

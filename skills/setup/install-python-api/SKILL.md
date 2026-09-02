@@ -11,6 +11,11 @@ metadata:
 
 # Install the CARLA Python client
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 The bootstrap step everything else in `python-api` depends on: without an
 importable `carla`, every one of those skills stops at
 `FAIL cannot import carla`. This skill fixes that, into **the interpreter you
@@ -27,6 +32,7 @@ Progress:
 - [ ] Step 2: detect  — what is installed, which sources exist, what matches
 - [ ] Step 3: install — auto-picks the best source, then verifies
 - [ ] Step 4: verify against a running server when you have one
+- [ ] Step 5: record `PYTHON` with `set_config` — the other skills read it
 ```
 
 ### Step 1: Check prerequisites
@@ -128,6 +134,19 @@ User says: "the simulator runs on another machine, I just need the client"
 Run `detect`, then `install`. If `detect` shows the target interpreter inside a
 `uv`/`pipx` cache path, set `PYTHON` to the real environment first — otherwise the
 install lands where nothing will use it.
+
+### Recording the path
+
+An `export` lasts until the shell exits. Persist `PYTHON` instead, so the
+next session — and `list_skills` — still knows where this went:
+
+```
+set_config({"PYTHON": "<the interpreter used above>"})
+```
+
+Without it the group this just enabled keeps reporting `available: false`,
+and the next skill re-detects from scratch. `CARLA_ROOT` is the only CARLA
+path to record: `set_config` derives the engine-specific variable itself.
 
 ## Verify
 

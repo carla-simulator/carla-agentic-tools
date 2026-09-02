@@ -11,6 +11,11 @@ metadata:
 
 # Download CARLA
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 The first link in the chain: get CARLA onto the machine and **say precisely what
 landed where**, so the skills that follow — [[install-python-api]],
 [[run-carla-server]], [[build-carla-ue4]] — need no guesswork from the user.
@@ -31,7 +36,7 @@ Progress:
 - [ ] Step 1: Check prerequisites (bash scripts/check_env.sh), clear FAILs
 - [ ] Step 2: list / resolve — see what exists and what it will cost
 - [ ] Step 3: fetch it (release | nightly | git | docker)
-- [ ] Step 4: export the printed variables; hand over to the next skill
+- [ ] Step 4: record the path with `set_config`, then hand over to the next skill
 ```
 
 ### Step 1: Check prerequisites
@@ -143,6 +148,19 @@ User says: "clone the ue4-dev branch"
 `git --ref ue4-dev` → `CARLA_UE4_ROOT` → [[build-carla-ue4]]. The skill warns that
 content is a separate ~31 GB fetch (build step 05) and that a checkout cannot be
 run until built.
+
+### Recording the path
+
+An `export` lasts until the shell exits. Persist `CARLA_ROOT` instead, so the
+next session — and `list_skills` — still knows where this went:
+
+```
+set_config({"CARLA_ROOT": "<the path printed above>"})
+```
+
+Without it the group this just enabled keeps reporting `available: false`,
+and the next skill re-detects from scratch. `CARLA_ROOT` is the only CARLA
+path to record: `set_config` derives the engine-specific variable itself.
 
 ## Verify
 

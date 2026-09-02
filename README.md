@@ -1,14 +1,16 @@
 # carla-agentic-tools
 
-A standalone [MCP](https://modelcontextprotocol.io) server that exposes a
-library of **vetted CARLA procedures** ("skills") to any MCP client. Each skill
-is a `SKILL.md` plus executable scripts with its failure modes encoded, so an
-agent discovers the right procedure and checks its prerequisites instead of
-improvising from the Makefile.
+A library of **vetted CARLA procedures** ("skills") for any agent. Each skill is
+a `SKILL.md` plus executable scripts with its failure modes encoded, so an agent
+discovers the right procedure and checks its prerequisites instead of improvising
+from the Makefile.
+
+Nothing in a skill is client-specific — plain Markdown and POSIX shell/Python.
+A standalone [MCP](https://modelcontextprotocol.io) server serves them to any
+MCP client.
 
 This repo is independent of any CARLA checkout: it targets a **specific CARLA
-instance at runtime** via environment variables, so one install can drive any
-build.
+instance at runtime**, recorded on first use, so one install can drive any build.
 
 ## Layout
 
@@ -17,9 +19,12 @@ carla-agentic-tools/
 ├── pyproject.toml            # hatchling; maps skills/ into the wheel
 ├── npm/                      # npx front door -> uvx -> the PyPI package
 ├── src/carla_agentic_tools/
-│   └── server.py             # MCP server: list_skills / read_skill / check_prerequisites
+│   ├── server.py             # MCP server: list_skills / read_skill / check_prerequisites
+│   │                         #   plus get_config / set_config
+│   └── config.py             # persisted paths + CARLA flavor detection
 ├── tests/                    # structural checks the release gates on
 └── skills/
+    ├── _common/env_common.sh # every env.sh loads the recorded paths through this
     ├── setup/                # get the pieces at all: download-carla, install-python-api,
     │                         #   install-scenario-runner, install-leaderboard
     ├── python-api/           # drives any running server (world-data, create-sensor, …)
@@ -45,7 +50,7 @@ that environment is often the task at hand.
 
 ## Install
 
-Nothing to clone. Pick whichever front door suits the client:
+The server ships on PyPI with the skills inside the wheel:
 
 ```bash
 # npx (Node available)
@@ -66,19 +71,15 @@ stream (diagnostics go to stderr).
 
 ## Registering with an MCP client
 
-Point the client at the command and pass the CARLA paths as env — no file is
-written into your checkout, and one install drives any instance:
+Point the client at the command. **No paths go here** — you would have to know
+them before the skills that create them have run:
 
 ```json
 {
   "mcpServers": {
     "carla": {
       "command": "npx",
-      "args": ["-y", "@carla-simulator/agentic-tools"],
-      "env": {
-        "CARLA_UE4_ROOT": "/path/to/carla",
-        "UE4_ROOT": "/path/to/UnrealEngine_4.26"
-      }
+      "args": ["-y", "@carla-simulator/agentic-tools"]
     }
   }
 }
@@ -86,10 +87,56 @@ written into your checkout, and one install drives any instance:
 
 Swap `command`/`args` for `uvx` + `["carla-agentic-tools"]` if you would rather
 skip Node. Claude Code reads `.mcp.json` from the project directory; Cursor and
-Claude Desktop take the same block in their own config.
+Claude Desktop take the same block in their own config. The CLI equivalent:
 
-The server exposes three tools: `list_skills` (optionally `group`-filtered),
-`read_skill(name)`, `check_prerequisites(name)`.
+```bash
+claude mcp add carla -s user -- carla-agentic-tools
+```
+
+Five tools: `list_skills` (optionally `group`-filtered), `read_skill(name)`,
+`check_prerequisites(name)`, `get_config()`, `set_config(paths)`.
+
+## Paths, and when you are asked for them
+
+Nothing is configured up front. `list_skills` on a bare machine already returns
+the `setup` group (download CARLA, install the Python API) and `python-api`
+(drives any running server) as available; everything else is listed with
+`available: false` and a reason, because obtaining the missing piece is usually
+the task at hand.
+
+A path is asked for the first time a skill needs one it does not have.
+`check_prerequisites` reports it as a `needs` block naming the key, the skill
+that would obtain it, and every candidate found on the machine **with its flavor
+and branch** — several CARLA checkouts side by side is normal, and picking the
+wrong one fails slowly. The agent asks; `set_config` records the answer.
+
+`CARLA_ROOT` is the only CARLA path anyone is asked for. `set_config` inspects
+the directory and writes the engine-specific variable itself:
+
+```
+set_config({"CARLA_ROOT": "/home/me/carla"})
+  CARLA_ROOT is source, ue58, branch ue58-dev; also set CARLA_UE58_ROOT
+```
+
+That is what gates the `ue58` group — the flavor comes from structural markers in
+the tree, not from which of the five variable names you happened to set.
+
+Resolution order for every key, highest first:
+
+| # | source | for |
+|---|---|---|
+| 1 | an exported environment variable | a one-off override, CI |
+| 2 | `./.carla-tools.env` | a repo carrying its own CARLA |
+| 3 | `${XDG_CONFIG_HOME:-~/.config}/carla-agentic-tools/config.env` | the normal case |
+| 4 | each `env.sh`'s own search list | last resort |
+
+The config outranks the search lists deliberately: once the user has confirmed
+which checkout to use, detection must not silently pick the other one. Override
+the file's location with `CARLA_TOOLS_CONFIG`. It is `KEY=value` lines, parsed
+rather than sourced, so nothing in it can execute.
+
+The install skills record what they created, so a group flips to `available:
+true` right after the install that enabled it, and stays that way next session.
 
 ## Developing on the skills
 
@@ -138,27 +185,40 @@ pytest -q tests/
 
 ## Targeting a CARLA instance
 
-The skills operate on a real, built CARLA + UE4, chosen via two variables:
+One install drives any CARLA. These are the keys the skills read; see **Paths,
+and when you are asked for them** above for how they get set — in normal use you
+answer a prompt and never type a variable name.
 
-| Var | Meaning |
+Asked for, when a skill needs one:
+
+| Key | Meaning |
 |---|---|
-| `CARLA_TARGET` | **the simplest option**: any CARLA — an extracted release or a checkout. `run-carla-server` detects which and launches it accordingly |
-| `CARLA_UE4_ROOT` | a carla source checkout (branch `ue4-dev`), needed by the build/package/import skills |
-| `UE4_ROOT` | the built CarlaUnreal UE 4.26 fork — editor mode only |
-| `PYTHON` | the interpreter that has the `carla` wheel. Set this whenever the server runs under `uvx`/`npx`, whose own python is first on PATH |
-| `CARLA_ROOT` | a CARLA release/checkout root, needed by scenario-runner and leaderboard for the `agents` package the `carla` wheel does not ship |
+| `CARLA_ROOT` | **the only CARLA path you are asked for**: a release or a source checkout. Its flavor is detected and the engine variable below is written for you |
+| `PYTHON` | the interpreter that has the `carla` wheel. Needed whenever the server runs under `uvx`/`npx`, whose own python is first on PATH |
 | `SCENARIO_RUNNER_ROOT` | a scenario_runner checkout — gates the `scenario-runner` group |
 | `LEADERBOARD_ROOT` | a leaderboard checkout — gates the `leaderboard` group |
-| `CARLA_HOST` / `CARLA_PORT` | where the simulator listens (default `127.0.0.1:2000`) |
+| `SCENIC_ROOT` | a Scenic checkout or installed package — gates the `scenic` group |
+| `CARLA_UNREAL_ENGINE_PATH` | the Unreal Engine fork CARLA builds against |
 
-No `carla` wheel yet? The `install-python-api` skill installs it from your release's
-bundled wheel or from PyPI, and checks it matches the simulator's version.
+Derived from `CARLA_ROOT`, or set by hand to override:
 
-Set them in the client's `env` block (above) or export them before launching —
-a live export always wins. One install can therefore drive several checkouts:
-give each client entry its own `env`. Future groups follow the same pattern
-(`CARLA_UE5_ROOT`, `SCENIC_ROOT`), and `list_skills` marks a group unavailable when
-its variable is unset.
+| Key | Written when `CARLA_ROOT` is |
+|---|---|
+| `CARLA_UE4_ROOT` | a `ue4-dev` checkout (`Unreal/CarlaUE4/CarlaUE4.uproject`) |
+| `CARLA_UE5_ROOT` | a `ue5-dev` checkout (`CMakePresets.json` + `Unreal/CarlaUnreal`) |
+| `CARLA_UE58_ROOT` | as above, plus the Autoware plugin and `CMake/DLSS.cmake` |
+| `CARLA_PACKAGE_ROOT`, `CARLA_TARGET` | an extracted release (a `CarlaUE4.sh` at the top) |
+
+Defaults, rarely touched: `CARLA_HOST` / `CARLA_PORT` (`127.0.0.1:2000`),
+`CARLA_TM_PORT` (`8000`), `CARLA_TIMEOUT`, `CARLA_PRESET`, `ROS_DOMAIN_ID`.
+
+No `carla` wheel yet? The `install-python-api` skill installs it from your
+release's bundled wheel or from PyPI, checks it matches the simulator, and
+records `PYTHON`.
+
+One install can still drive several checkouts: give a repo its own
+`./.carla-tools.env`, or export a variable for a single run — an export always
+wins over the config.
 
 **Version pairing matters** for the scenario-runner and leaderboard groups: a
 scenario_runner branch belongs to a CARLA version, and a leaderboard version
@@ -166,11 +226,10 @@ belongs to a scenario_runner branch. The two installer skills derive the pairing
 and every `check_env.sh` in those groups fails loudly on a mismatch, because the
 symptom otherwise is scenarios that silently never trigger.
 
-`CARLA_UE4_ROOT` also auto-resolves to `$PWD` when a skill runs from inside a
-checkout; `check_prerequisites` fails loudly, naming the paths it checked, when
-either is missing or wrong. The legacy `setup.sh --carla … --ue4 …` bakes these
-as defaults into a `.mcp.json` inside the checkout; that path still works but is
-no longer needed to install.
+Paths also auto-resolve to `$PWD` when a skill runs from inside the relevant
+checkout, and `check_prerequisites` fails loudly, naming what it checked, when
+something is missing or wrong. That search is the last resort, below the config:
+a recorded answer is never silently overridden by a guess.
 
 ## Running a skill directly (no server)
 
@@ -194,9 +253,18 @@ full procedure, knobs (`PACKAGE_DEST`, `CLEAN_INTERMEDIATE`, …), and gotchas.
 
 Drop a new `skills/<group>/<name>/` directory containing at minimum a `SKILL.md`
 (with `description:` and `metadata.group:` matching the directory) and, for
-prerequisite checks, a `scripts/check_env.sh`. It is discovered automatically on
-the next server start, and `pytest -q tests/` checks the invariants (frontmatter,
-group, links, script syntax) that the release gates on.
+prerequisite checks, a `scripts/check_env.sh`. The MCP server discovers it on the
+next start.
+
+`pytest -q tests/` checks the invariants (frontmatter, group, links, script
+syntax) the release gates on.
+
+Body prose must reach `scripts/` and `references/` by **absolute** path: the
+agent's working directory is the user's project, not the skill directory. Each
+`SKILL.md` opens with a `> **Paths.**` note saying so, and `read_skill` prefixes
+its output with the skill's absolute directory. A new skill also needs its
+`scripts/env.sh` to source `skills/_common/env_common.sh`, or it cannot see the
+paths the user recorded — `tests/test_config.py` fails when one does not.
 
 Groups are directories: add `skills/ue5/` or `skills/scenic/` and register the
 environment variable that gates it in `GROUP_REQUIREMENTS` (`server.py`).

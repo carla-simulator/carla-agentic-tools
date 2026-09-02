@@ -11,6 +11,11 @@ metadata:
 
 # Install Scenic
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Scenic is pure Python — **there is nothing to build** and `pip install scenic` is
 the whole install. Two things make it go wrong anyway, and neither reports an
 install error:
@@ -34,7 +39,7 @@ Progress:
 - [ ] Step 2: Pick the interpreter — the one that has the CARLA client
 - [ ] Step 3: See the plan for this machine
 - [ ] Step 4: Install (and clone examples if they are wanted)
-- [ ] Step 5: Verify, and export SCENIC_ROOT
+- [ ] Step 5: Verify, and record `SCENIC_ROOT` and `PYTHON` with `set_config`
 ```
 
 ### Step 1-3: What is here, and what to do about it
@@ -104,6 +109,20 @@ export SCENIC_ROOT=$(python3 -c 'import os,scenic;print(os.path.dirname(scenic._
 
 Running and authoring scenarios is out of scope here — see
 [[run-scenic-scenario]] and [[create-scenic-scenario]].
+
+### Recording the path
+
+An `export` lasts until the shell exits. Persist `SCENIC_ROOT` and `PYTHON` instead, so the
+next session — and `list_skills` — still knows where this went:
+
+```
+set_config({"SCENIC_ROOT": "<the checkout or package dir>",
+            "PYTHON": "<the interpreter Scenic went into>"})
+```
+
+Without it the group this just enabled keeps reporting `available: false`,
+and the next skill re-detects from scratch. `CARLA_ROOT` is the only CARLA
+path to record: `set_config` derives the engine-specific variable itself.
 
 ## Examples
 

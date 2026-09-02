@@ -11,6 +11,11 @@ metadata:
 
 # Spawn wandering pedestrians
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Populate the map with pedestrians that walk around on their own. Each is a
 `walker.pedestrian.*` body paired with a `controller.ai.walker` that steers it to
 random points on the **navigation mesh**. The deliverable is a live, moving crowd;

@@ -11,6 +11,11 @@ metadata:
 
 # Import a walker on UE 5.8
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 A walker is **three** artefacts, not one. Miss any and it either never appears or
 appears and never moves:
 

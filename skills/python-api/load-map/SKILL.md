@@ -11,6 +11,11 @@ metadata:
 
 # Load a CARLA map
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Change what map a **running** server hosts, from a client. The deliverable is a
 verified world: after any load the map name and the sync/rendering settings are
 read back, because a load can quietly land on a different map or reset settings.

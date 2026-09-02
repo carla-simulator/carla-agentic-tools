@@ -12,6 +12,11 @@ metadata:
 
 # Read a sensor
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Point this at an existing sensor (make one with [`create-sensor`](../create-sensor/SKILL.md))
 and either **show** it in a window, **save** its stream to disk, or get a one-shot
 **info** summary. The goal is: select a sensor → see it.

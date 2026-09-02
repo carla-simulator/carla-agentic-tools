@@ -11,6 +11,11 @@ metadata:
 
 # Run Autoware against CARLA on UE 5.8
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 **There is no bridge.** The CARLA server publishes vehicle status and sensor data
 straight onto DDS and subscribes to Autoware's control commands, because the
 publishers and the subscriber are compiled into the simulator:

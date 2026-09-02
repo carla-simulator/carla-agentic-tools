@@ -21,6 +21,10 @@
 # an already-active environment. Unset, it is a silent no-op. Nothing else is
 # detected: no environment-manager binary is probed, no dotfile is searched for.
 # Roots the caller exported explicitly outrank anything that script sets.
+# Paths the install skills recorded, for keys with no value yet; an exported
+# variable still wins. See skills/_common/env_common.sh.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 _KEEP_CARLA_ROOT="${CARLA_UE4_ROOT:-}" _KEEP_UE4_ROOT="${UE4_ROOT:-}"
 if [ -n "${CARLA_ENV_ACTIVATE:-}" ] && [ -f "${CARLA_ENV_ACTIVATE}" ]; then
   # shellcheck disable=SC1090

@@ -11,6 +11,11 @@ metadata:
 
 # What UE 5.5 cannot do
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 **5.5 and 5.8 are the same CARLA line, not parallel products.** Both branches
 declare `CARLA 0.10.0`; `PythonAPI/carla/src/Sensor.cpp` is byte-identical
 between them, `Actor.cpp` differs by 2 lines and `World.cpp` by 22. 5.8 is the

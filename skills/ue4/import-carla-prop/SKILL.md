@@ -12,6 +12,11 @@ metadata:
 
 # Import a prop into CARLA
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 ```bash
 # a directory — each subdirectory names the semantic tag for what is inside
 python3 scripts/import_prop.py ~/meshes/props

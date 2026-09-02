@@ -11,6 +11,11 @@ metadata:
 
 # Control light sources
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Switch and tune the world's illumination — street lamps, building lights, vehicle
 lights — via the `LightManager`. These are actual light **sources** (they cast
 light): different from `toggle-env-objects` (which hides the lamp *geometry*) and

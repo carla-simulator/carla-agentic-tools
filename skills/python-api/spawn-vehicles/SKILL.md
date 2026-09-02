@@ -11,6 +11,11 @@ metadata:
 
 # Spawn autopilot vehicles
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Populate the roads with self-driving traffic. Vehicles are placed at the map's
 predefined **spawn points** and, by default, handed to the **Traffic Manager**
 autopilot at spawn time so they drive the road network autonomously. `destroy`

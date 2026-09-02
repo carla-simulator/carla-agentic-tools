@@ -117,16 +117,71 @@ def test_mcp_tools_work_against_the_tree(monkeypatch):
     assert all(e["description"] for e in listed)
 
     one = listed[0]["name"]
-    assert server.read_skill(one).startswith("---")
+    body = server.read_skill(one)
+    # An MCP client only ever sees this text, so the absolute skill directory has
+    # to be in it — the document's own `scripts/...` paths are relative to it.
+    first = body.splitlines()[0]
+    assert first.startswith("Skill directory: /"), f"no absolute anchor: {first!r}"
+    assert Path(first.split(": ", 1)[1], "SKILL.md").is_file()
+    assert "\n---\n" in body, "frontmatter missing after the anchor"
     with pytest.raises(ValueError):
         server.read_skill("no-such-skill")
 
-    # A group gated on an env var is listed but flagged, never hidden.
-    monkeypatch.delenv("CARLA_UE4_ROOT", raising=False)
+def test_unconfigured_group_is_flagged_not_hidden(monkeypatch, tmp_path):
+    """A group with nothing configured stays listed, with an actionable reason.
+
+    Building or checking out the missing thing is itself a valid next step, so
+    hiding the skill would hide the fix. Every path var is cleared and the config
+    pointed at an empty file, or the result depends on the developer's machine.
+    """
+    monkeypatch.setenv("CARLA_SKILLS_DIR", str(SKILLS))
+    monkeypatch.setenv("CARLA_TOOLS_CONFIG", str(tmp_path / "config.env"))
+    monkeypatch.chdir(tmp_path)
+    for var in ("CARLA_ROOT", "CARLA_TARGET", "CARLA_PACKAGE_ROOT", "CARLA_UE4_ROOT",
+                "CARLA_UE5_ROOT", "CARLA_UE58_ROOT", "SCENARIO_RUNNER_ROOT",
+                "LEADERBOARD_ROOT", "SCENIC_ROOT"):
+        monkeypatch.delenv(var, raising=False)
     for mod in [m for m in list(sys.modules) if m.startswith("carla_agentic_tools")]:
         del sys.modules[mod]
-    import carla_agentic_tools.server as server2
+    import carla_agentic_tools.server as server
 
-    ue4 = [e for e in server2.list_skills(group="ue4")]
-    assert ue4, "ue4 group vanished when CARLA_UE4_ROOT was unset"
-    assert all(e["available"] is False and "CARLA_UE4_ROOT" in e["unavailable_reason"] for e in ue4)
+    ue4 = server.list_skills(group="ue4")
+    assert ue4, "ue4 group vanished when nothing was configured"
+    assert all(e["available"] is False for e in ue4)
+    # The reason has to name what to do, and CARLA_ROOT is the only path a user
+    # is ever asked for, so it must appear rather than just the derived vars.
+    assert all("CARLA_ROOT" in e["unavailable_reason"] for e in ue4)
+
+    # A group needing no checkout stays available on a bare machine, except for
+    # the one skill that imports `agents` — see the navigate-to case below.
+    api = {e["name"]: e for e in server.list_skills(group="python-api")}
+    assert all(e["available"] for n, e in api.items() if n != "navigate-to")
+
+    # download-carla must never be gated: it is the way out of an empty machine.
+    setup = {e["name"]: e for e in server.list_skills(group="setup")}
+    assert setup["download-carla"]["available"]
+    assert setup["install-python-api"]["available"]
+
+
+def test_navigate_to_needs_carla_root_though_its_group_does_not(monkeypatch, tmp_path):
+    """`agents` ships only inside a CARLA tree, not in the carla wheel.
+
+    Gating on the group alone reported this skill ready with just a wheel and a
+    running server, which is the one case in `python-api` where that is false.
+    """
+    monkeypatch.setenv("CARLA_SKILLS_DIR", str(SKILLS))
+    monkeypatch.setenv("CARLA_TOOLS_CONFIG", str(tmp_path / "config.env"))
+    monkeypatch.chdir(tmp_path)
+    for var in ("CARLA_ROOT", "CARLA_TARGET", "CARLA_PACKAGE_ROOT", "CARLA_UE4_ROOT",
+                "CARLA_UE5_ROOT", "CARLA_UE58_ROOT"):
+        monkeypatch.delenv(var, raising=False)
+    for mod in [m for m in list(sys.modules) if m.startswith("carla_agentic_tools")]:
+        del sys.modules[mod]
+    import carla_agentic_tools.server as server
+
+    nav = next(e for e in server.list_skills(group="python-api") if e["name"] == "navigate-to")
+    assert nav["available"] is False
+    assert "CARLA_ROOT" in nav["unavailable_reason"]
+
+    spawn = next(e for e in server.list_skills(group="python-api") if e["name"] == "spawn-vehicles")
+    assert spawn["available"], "a wheel-only skill must not be gated on CARLA_ROOT"

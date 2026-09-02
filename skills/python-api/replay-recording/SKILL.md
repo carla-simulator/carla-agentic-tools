@@ -12,6 +12,11 @@ metadata:
 
 # Replay a CARLA recording
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Play back a `.log` produced by [`record-simulation`](../record-simulation/SKILL.md).
 The server re-creates the recorded scene; `play` prints its summary. Confirm the
 replay by watching the followed actor or by inspecting the same log with

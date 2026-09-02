@@ -13,6 +13,11 @@ metadata:
 
 # Build CARLA ue4-dev on Linux (end-to-end)
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Builds CARLA from the **`ue4-dev`** branch (Unreal Engine **4.26**) on Ubuntu
 20.04 / 22.04 / **24.04**. Each step is an idempotent script under `scripts/`;
 the scripts ARE the procedure — running them in order performs and verifies the

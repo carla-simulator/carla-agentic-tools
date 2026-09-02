@@ -11,6 +11,11 @@ metadata:
 
 # Run an OpenSCENARIO file
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 ScenarioRunner speaks two unrelated standards that happen to share a name:
 
 | | OpenSCENARIO 1.x | OpenSCENARIO 2.0 |

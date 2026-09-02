@@ -11,6 +11,11 @@ metadata:
 
 # Write a Leaderboard agent
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 An agent is one Python file with one class. The Leaderboard imports it by path and
 instantiates it **by a name derived from the file name**:
 

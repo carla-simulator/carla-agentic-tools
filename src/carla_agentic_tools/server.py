@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 import subprocess
 from pathlib import Path
+
+from . import config as _cfg
 
 # The MCP SDK renamed the high-level server class in 2.0 (FastMCP -> MCPServer)
 # and dropped the old import path. Both expose the same surface used here
@@ -91,6 +94,14 @@ failure modes encoded. The skills are the source of truth for these tasks;
 the raw Makefile and Util/BuildTools scripts are a fallback when none matches.
 list_skills finds a skill, read_skill(name) returns its procedure,
 check_prerequisites(name) verifies its environment.
+
+Paths are configured on first need, not up front. When check_prerequisites
+reports a "needs" section, ask the user which path to use — offering each
+candidate with its flavor and branch, the install_skill that would obtain it,
+and typing a path — then record the answer with set_config so it survives the
+session. Never guess a path: several CARLA checkouts on one machine is normal
+and the wrong one fails slowly. CARLA_ROOT is the only CARLA path to ask for;
+set_config derives the engine-specific variable that gates ue4/ue5/ue58.
 """
 
 def _version() -> str:
@@ -103,13 +114,21 @@ def _version() -> str:
         return ""
 
 
-# mcp 2.x reports serverInfo.version (clients show it, and it identifies which
-# skill library a run used); 1.x has no such parameter, so pass it only when the
-# constructor accepts it rather than branching on SDK version numbers.
+# Clients display serverInfo.version, and it identifies which skill library a run
+# used. Accept it on the constructor where the SDK offers it (mcp 2.x, and the
+# low-level Server), rather than branching on SDK version numbers.
 _kwargs: dict = {"name": "carla-agentic-tools", "instructions": SERVER_INSTRUCTIONS}
 if "version" in inspect.signature(_MCPServer.__init__).parameters:
     _kwargs["version"] = _version()
 mcp = _MCPServer(**_kwargs)
+
+# FastMCP (mcp 1.x) takes no `version` and wraps a low-level Server that does,
+# leaving serverInfo.version reporting the *SDK* release. Set it through the
+# wrapper so every client sees the skill library's version instead.
+if "version" not in _kwargs:
+    _low = getattr(mcp, "_mcp_server", None)
+    if _low is not None and hasattr(_low, "version"):
+        _low.version = _version()
 
 
 def _skill_dirs() -> list[Path]:
@@ -131,13 +150,84 @@ def _group_of(d: Path) -> str:
     return d.parent.name if d.parent != SKILLS_DIR else ""
 
 
+#: Engine groups are additionally satisfied by the flavor detected at CARLA_ROOT,
+#: so a user is asked "where is your CARLA?" once instead of having to know which
+#: of five variable names describes their checkout.
+_ENGINE_GROUPS = ("ue4", "ue5", "ue58")
+
+
 def _group_available(group: str) -> tuple[bool, str]:
     vars_, what = GROUP_REQUIREMENTS.get(group, ((), ""))
     if not vars_:
         return True, ""
-    if any(os.environ.get(v) for v in vars_):
-        return True, ""
-    return False, f"none of {'/'.join(vars_)} is set (needs {what})"
+    broken: list[str] = []
+    for v in vars_:
+        value, _, why = _cfg.resolve_valid(v)
+        if value and not why:
+            return True, ""
+        if value:
+            broken.append(f"{v}: {why}")
+    if group in _ENGINE_GROUPS:
+        root, _, why = _cfg.resolve_valid("CARLA_ROOT")
+        if root and not why:
+            if _cfg.detect_carla(root)["flavor"] == group:
+                return True, ""
+            broken.append(f"CARLA_ROOT is a {_cfg.detect_carla(root)['flavor'] or 'unrecognised'} "
+                          f"CARLA, not {group}")
+        elif root:
+            broken.append(f"CARLA_ROOT: {why}")
+    if broken:
+        # A configured-but-unusable path is a different problem from an unset one,
+        # and saying which stops the user re-entering the same wrong answer.
+        return False, "configured but unusable — " + "; ".join(broken) + f" (needs {what})"
+    return False, (f"not configured: set CARLA_ROOT to your CARLA, or {'/'.join(vars_)} "
+                   f"directly (needs {what})" if group in _ENGINE_GROUPS
+                   else f"not configured: {'/'.join(vars_)} is unset (needs {what})")
+
+
+#: What each installer skill creates. Two uses: an unset key can be offered as
+#: "get it for me" rather than only "type a path", and a skill is never gated on
+#: something it exists to produce — install-leaderboard clones the matching
+#: scenario_runner as part of its job, so an absent one must not hide it.
+_PROVIDES: dict[str, tuple[str, ...]] = {
+    "download-carla": ("CARLA_ROOT",),
+    "install-python-api": ("PYTHON",),
+    "install-scenario-runner": ("SCENARIO_RUNNER_ROOT",),
+    "install-leaderboard": ("LEADERBOARD_ROOT", "SCENARIO_RUNNER_ROOT"),
+    "install-scenic": ("SCENIC_ROOT", "PYTHON"),
+}
+
+#: key -> the skill to suggest for it. First provider wins, so the skill whose
+#: primary job is that key is the one offered.
+_PROVIDERS = {key: name for name, keys in _PROVIDES.items() for key in reversed(keys)}
+_PROVIDERS.update({keys[0]: name for name, keys in _PROVIDES.items()})
+
+
+def _skill_available(skill: Path, group: str) -> tuple[bool, str]:
+    """Group requirement, plus every required key this one skill declares.
+
+    Gating on the group alone marks a skill ready when it is not: `navigate-to`
+    sits in the ungated `python-api` group but imports `agents`, which ships only
+    inside a CARLA tree — so it needs CARLA_ROOT while its neighbours need only
+    the carla wheel.
+    """
+    ok, why = _group_available(group)
+    if not ok:
+        return ok, why
+    for key, (doc, required) in _declared_vars(skill).items():
+        if not required or key not in _cfg.CONFIG_KEYS:
+            continue
+        # Never gate a skill on the thing it exists to produce: install-leaderboard
+        # takes LEADERBOARD_ROOT as an optional input for verify mode, and hiding
+        # it until a leaderboard exists hides the way to get one.
+        if key in _PROVIDES.get(skill.name, ()):
+            continue
+        value, _, bad = _cfg.resolve_valid(key)
+        if not value:
+            return False, f"not configured: {key} is unset ({doc})"
+        if bad:
+            return False, f"configured but unusable — {key}: {bad}"
+    return True, ""
 
 
 def _find_skill(name: str) -> Path | None:
@@ -172,7 +262,7 @@ def list_skills(group: str | None = None) -> list[dict]:
             if line.startswith("description:"):
                 desc = line.split(":", 1)[1].strip()
                 break
-        ok, why = _group_available(g)
+        ok, why = _skill_available(d, g)
         entry = {"name": d.name, "group": g, "description": desc, "available": ok}
         if why:
             entry["unavailable_reason"] = why
@@ -190,7 +280,16 @@ def read_skill(name: str) -> str:
     d = _find_skill(name)
     if d is None:
         raise ValueError(f"unknown skill {name!r}; see list_skills()")
-    return (d / "SKILL.md").read_text()
+    # The document reaches its scripts and references by paths relative to its
+    # own directory, and the client's working directory is the user's project.
+    # An MCP client has never seen a filesystem path for this skill, so state it
+    # here or every `bash scripts/check_env.sh` in the body is unrunnable.
+    header = (
+        f"Skill directory: {d}\n"
+        f"Every `scripts/...` and `references/...` path below is relative to that "
+        f"directory. Prefix them with it before running anything.\n\n"
+    )
+    return header + (d / "SKILL.md").read_text()
 
 
 @mcp.tool()
@@ -211,7 +310,139 @@ def check_prerequisites(name: str) -> str:
         ["bash", str(script)],
         capture_output=True, text=True, timeout=120,
     )
-    return f"exit={proc.returncode}\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+    report = f"exit={proc.returncode}\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+    # Only when the preflight actually failed. Several keys have a working default
+    # (PYTHON falls back to python3), so asking about one the check just passed
+    # with would be a prompt for nothing.
+    if proc.returncode == 0:
+        return report
+    needs = _unmet_keys(d)
+    return report + ("\n--- needs ---\n" + needs if needs else "")
+
+
+def _unmet_keys(skill: Path) -> str:
+    """The configurable keys this skill declares that have no value yet.
+
+    Only the keys this one skill reads, because prompting for the whole set on
+    first contact is worse than the status quo: most skills need one or two, and
+    a skill that drives an already-running server needs none.
+    """
+    lines: list[str] = []
+    for key, (what, _required) in _declared_vars(skill).items():
+        if key not in _cfg.CONFIG_KEYS:
+            continue
+        value, _, bad = _cfg.resolve_valid(key)
+        if value and not bad:
+            continue
+        lines.append(f"key: {key}")
+        lines.append(f"  what: {what}")
+        if bad and value:
+            lines.append(f"  current value is unusable: {bad}")
+        if key in _PROVIDERS:
+            lines.append(f"  install_skill: {_PROVIDERS[key]}")
+        if key == "CARLA_ROOT":
+            for c in _cfg.carla_candidates():
+                lines.append(f"  candidate: {c['path']}  ({c['detail']})")
+    if not lines:
+        return ""
+    return ("Ask the user to choose, then call set_config. Offer each candidate with\n"
+            "its flavor and branch, the install_skill, and typing a path.\n"
+            + "\n".join(lines))
+
+
+#: Each env.sh documents the variables it reads in a header block. Parsing that
+#: is what lets check_prerequisites report exactly which keys a given skill needs
+#: instead of prompting for the whole set.
+_VAR_DOC = re.compile(r"^#\s{2,}([A-Z][A-Z0-9_]{2,})\s{2,}(\S.*)$")
+
+
+def _declared_vars(skill: Path) -> dict[str, tuple[str, bool]]:
+    """`{KEY: (doc, required)}` from the skill's env.sh header.
+
+    A key whose doc names a default is optional — `PYTHON` falls back to python3,
+    `CARLA_HOST` to 127.0.0.1 — so only the rest can make a skill unavailable.
+    """
+    env_sh = skill / "scripts" / "env.sh"
+    if not env_sh.is_file():
+        return {}
+    out: dict[str, tuple[str, bool]] = {}
+    for line in env_sh.read_text().splitlines()[:40]:
+        m = _VAR_DOC.match(line)
+        if m:
+            doc = m.group(2).strip()
+            has_default = "(default" in doc.lower() or "default:" in doc.lower()
+            out[m.group(1)] = (doc, not has_default)
+    return out
+
+
+@mcp.tool()
+def get_config() -> dict:
+    """Report every configurable path, its value, and where that value came from.
+
+    Call this before asking the user anything: a key already set in the
+    environment or the config file needs no prompt. `candidates` lists the CARLA
+    installs found on this machine, each with its flavor and branch, for when
+    CARLA_ROOT is unset — offer them as choices rather than picking one.
+    """
+    entries = {}
+    for key, what in {**_cfg.CONFIG_KEYS,
+                      **{k: "derived from CARLA_ROOT" for k in _cfg.DERIVED_KEYS}}.items():
+        value, source, problem = _cfg.resolve_valid(key)
+        entries[key] = {"value": value, "source": source, "what": what,
+                        "usable": bool(value) and not problem}
+        if problem and value:
+            entries[key]["problem"] = problem
+    out: dict = {"config_file": str(_cfg.user_config_path()), "keys": entries}
+    if not entries["CARLA_ROOT"]["value"]:
+        out["candidates"] = _cfg.carla_candidates()
+    return out
+
+
+@mcp.tool()
+def set_config(paths: dict[str, str]) -> str:
+    """Persist configured paths so they survive the session. Ask the user first.
+
+    `paths` maps a key from get_config to an absolute path; an empty value clears
+    it. Setting CARLA_ROOT also writes the engine-specific variable for whatever
+    that directory turns out to be, which is what makes the matching ue4/ue5/ue58
+    skills available — so ask only for CARLA_ROOT, never for those.
+
+    Never guess a path here. Present get_config's `candidates` to the user with
+    their flavor and branch and let them choose, because several checkouts of
+    different branches on one machine is normal and the wrong one fails slowly.
+    """
+    updates: dict[str, str] = {}
+    notes: list[str] = []
+    for key, raw in paths.items():
+        if key not in _cfg.CONFIG_KEYS and key not in _cfg.DERIVED_KEYS:
+            raise ValueError(f"unknown key {key!r}; see get_config()")
+        if not raw:
+            updates[key] = ""
+            notes.append(f"{key} cleared")
+            continue
+        p = Path(raw).expanduser()
+        # Reject here rather than storing it: a path that fails validation would
+        # otherwise leave the group unavailable with no sign the answer was wrong.
+        ok, why = _cfg.validate(key, str(p))
+        if not ok:
+            raise ValueError(f"{key}: {why}")
+        updates[key] = str(p)
+        if key == "CARLA_ROOT":
+            info = _cfg.detect_carla(p)
+            if info["kind"] == "none":
+                raise ValueError(f"CARLA_ROOT: {info['detail']} at {p}")
+            updates.update(info["vars"])
+            notes.append(f"CARLA_ROOT is {info['detail']}; "
+                         f"also set {', '.join(k for k in info['vars'] if k != 'CARLA_ROOT')}")
+        else:
+            notes.append(f"{key} = {p}")
+
+    written = _cfg.write_config(updates)
+    shadowed = [k for k in updates if os.environ.get(k) and os.environ[k] != updates[k]]
+    if shadowed:
+        notes.append("NOTE: an exported environment variable still overrides "
+                     f"{', '.join(shadowed)} — unset it or the config is ignored")
+    return f"wrote {written}\n" + "\n".join(f"  {n}" for n in notes)
 
 
 def main() -> None:

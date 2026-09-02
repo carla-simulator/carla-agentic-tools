@@ -11,6 +11,11 @@ metadata:
 
 # Explore a CARLA map
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Query and visualise the road network of the loaded map. Three headline uses:
 
 1. **Rundown** — `summary` turns the map into stats *and* a one-paragraph

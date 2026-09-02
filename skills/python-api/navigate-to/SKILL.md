@@ -11,6 +11,11 @@ metadata:
 
 # Navigate a vehicle to a destination
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Point-to-point autonomous driving. `go` drives the ego to a destination with a
 navigation agent that plans a route and follows it while avoiding obstacles and
 obeying (or ignoring, on request) traffic lights. `route` just plans the path.

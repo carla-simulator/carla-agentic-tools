@@ -11,6 +11,11 @@ metadata:
 
 # Set CARLA weather
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Set the weather on a **running** server from a client, and read it back to
 confirm. The deliverable is verified server state: `set_weather` returns nothing,
 so every change is re-read into a `VERIFY` block.

@@ -12,6 +12,11 @@ metadata:
 
 # Add a ROS 2 publisher or subscriber
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 A topic exists only when **four** things line up: a message type, a publisher
 object, a registration so something creates it, and a call site that feeds it
 data. Miss the last one and everything compiles while the topic never appears.

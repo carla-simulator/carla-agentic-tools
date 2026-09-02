@@ -11,6 +11,11 @@ metadata:
 
 # Draw CARLA debug shapes
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Overlay primitives on the running world for visual debugging: points, lines,
 arrows, boxes, text. They are drawn by the server as a transient overlay — **not
 actors** — so they cannot be selected or deleted individually; they expire after

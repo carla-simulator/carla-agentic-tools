@@ -11,6 +11,11 @@ metadata:
 
 # Query the world (and resolve entities)
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 The **resolver** skill. Other skills act on one entity by id; this one finds that
 id when the request is a description — "a prius" (but there are three), "the
 nearest walker", "the 3rd vehicle". It also reads world-level data: snapshot,
