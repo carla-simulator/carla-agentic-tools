@@ -2,6 +2,12 @@
 # Prerequisite checks for import-carla-ue58-map (CARLA on UE 5.8). Read-only, no sudo, fast —
 # the MCP check_prerequisites(name) tool must never hang.
 # Hard blockers: no checkout, wrong engine major.minor, no engine binary, no cmake.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091

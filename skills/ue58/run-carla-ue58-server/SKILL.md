@@ -67,7 +67,10 @@ PORT=3000 DETACH=1 bash scripts/run_server.sh game
 | `ROS2=1` | append `-ros2`; needs a build with `ENABLE_ROS2=ON` |
 | `RMW=` | `fastdds` (default), `cyclonedds`, `zenoh` |
 | `ROS_DOMAIN_ID=` | must match the subscriber side |
-| `WINDOW=1` | render to a window instead of offscreen |
+| `WINDOW=1` | render to a window instead of offscreen; implies `-notrace` |
+| `TRACE=1` | keep UnrealTrace enabled under `WINDOW=1` |
+| `RES=WxH` | window size, `WINDOW=1` only (e.g. `RES=1920x1080`) |
+| `FULLSCREEN=1` | exclusive fullscreen, `WINDOW=1` only; default is `-windowed` |
 | `NULLRHI=1` | no RHI at all — **see the warning below** |
 | `QUALITY=Low` | `-quality-level=Low` |
 | `EXTRA=` | anything else |
@@ -76,6 +79,41 @@ PORT=3000 DETACH=1 bash scripts/run_server.sh game
 holding the shell's stdio; when that goes away it dies with
 `close: Bad file descriptor` and then Signal 11. The script uses
 `setsid nohup … </dev/null &`.
+
+### Filling the screen (and why not `-fullscreen` by default)
+
+`WINDOW=1` alone leaves the window at whatever size the engine picks. To fill a
+display, give it the size and leave it a normal window:
+
+```bash
+WINDOW=1 RES=1920x1080 DETACH=1 bash scripts/run_server.sh game Town10HD_Opt
+```
+
+`FULLSCREEN=1` asks for exclusive fullscreen instead, and it is deliberately not
+the default: an overlay window — a terminal being screen-recorded on top of the
+simulator, for instance — does not reliably stay above an exclusive-fullscreen
+window, and some capture paths flicker. Sized-and-windowed looks the same on
+camera and composites properly.
+
+### `WINDOW=1` and the UnrealTrace crash
+
+A windowed launch started straight after a headless one died on startup:
+
+```
+SIGSEGV: invalid attempt to read memory at address 0x00007dcfcdff1a10
+UE::Trace::Private::Writer_WorkerThread   [Trace/Writer.cpp:1082]
+  -> TraceAuxiliaryOnMessageCallback      [TraceAuxiliary.cpp:1455]
+  -> FLLMTracker::TrackAllocation         [HAL/LLM/LLM.cpp:6630]
+```
+
+Inside UnrealTrace's own writer thread — not the window, not the RHI — with a
+stale `UnrealTraceServer` daemon still resident from the previous run. The same
+command came up clean with `-notrace`, so `WINDOW=1` now passes it by default
+and `TRACE=1` puts it back. If a launch still dies this way, clear the daemon:
+
+```bash
+pkill -f "[U]nrealTraceServer"
+```
 
 ### `NULLRHI=1` will crash the server if you spawn a camera
 

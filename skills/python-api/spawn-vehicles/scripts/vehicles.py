@@ -43,10 +43,27 @@ DestroyActor = carla.command.DestroyActor
 FutureActor = carla.command.FutureActor
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _client() -> carla.Client:
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    # 10 s is too tight for a client that owns the clock: one slow tick on a
+    # loaded server (an HD camera saving frames, say) raises std::exception and
+    # takes the whole holder down with it. CARLA_TIMEOUT still overrides.
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client
 
 
@@ -58,12 +75,102 @@ def _tm_and_sync(client, world, tm_port):
     return tm
 
 
+
+
+
+# --- clock ownership -------------------------------------------------------
+# Read the world settings before doing anything, then obey one rule:
+#
+#   already synchronous -> someone else owns the clock. NEVER tick; wait_for_tick.
+#   asynchronous        -> we may switch it to sync and become the ticker.
+#
+# Ticking a world you do not own is what breaks a shared scene. Measured on
+# 0.10.0: with a traffic client owning a 20 Hz sync clock, a walker spawn that
+# called tick() itself left 0 of 22 walkers moving -- the tick that has to land
+# between spawning a controller and start()ing it never sequenced. Re-issuing
+# start()+go_to_location from a client that only waited put 21 of 22 in motion.
+_OWNS_CLOCK = False
+
+
+def _claim_clock(world, delta, allow_sync=True):
+    """Returns the settings to restore, or None if we did not change anything."""
+    global _OWNS_CLOCK
+    previous = world.get_settings()
+    if previous.synchronous_mode:
+        _OWNS_CLOCK = False
+        print("world is already synchronous — another client owns the clock; "
+              "observing with wait_for_tick()", flush=True)
+        return None
+    if not allow_sync:
+        _OWNS_CLOCK = False
+        return None
+    settings = world.get_settings()
+    settings.synchronous_mode = True
+    settings.fixed_delta_seconds = delta
+    world.apply_settings(settings)
+    _OWNS_CLOCK = True
+    print(f"world was asynchronous -> synchronous, "
+          f"fixed_delta_seconds={delta:g} ({1.0 / delta:g} Hz), this client ticks",
+          flush=True)
+    return previous
+
+
+def _release_clock(world, previous, tm=None):
+    """Hand the clock back. A sync world with no ticker is a frozen server."""
+    global _OWNS_CLOCK
+    if previous is None:
+        return
+    if tm is not None:
+        try:
+            tm.set_synchronous_mode(False)
+        except RuntimeError:
+            pass
+    world.apply_settings(previous)
+    _OWNS_CLOCK = False
+    print("world settings restored (asynchronous)", flush=True)
+
+
+def _cleanup(client, ids, keep):
+    """Destroy what this run spawned, unless --keep was asked for."""
+    if not ids:
+        return
+    if keep:
+        print(f"--keep: leaving {len(ids)} vehicle(s) in the world", flush=True)
+        return
+    # do_tick=False: this runs during teardown, when asking the server for a
+    # tick as well is exactly what times out.
+    try:
+        responses = client.apply_batch_sync(
+            [carla.command.DestroyActor(i) for i in ids], False)
+        gone = sum(1 for r in responses if not r.error)
+    except RuntimeError:
+        gone = 0
+        for i in ids:
+            try:
+                actor = client.get_world().get_actor(i)
+                if actor is not None and actor.destroy():
+                    gone += 1
+            except RuntimeError:
+                pass
+    print(f"removed {gone} vehicle(s) this run spawned", flush=True)
+
+
 def _pump(world) -> None:
-    """Advance (sync) or observe (async) one frame."""
-    if world.get_settings().synchronous_mode:
-        world.tick()
-    else:
-        world.wait_for_tick()
+    """Advance the world if we own its clock, otherwise just observe."""
+    # A tick can exceed the client timeout when the server is loaded -- an HD
+    # camera saving PNGs at 20 Hz did it here, and the raised std::exception
+    # tore down a holder that was otherwise healthy. One retry absorbs that;
+    # a second failure is a real problem and propagates.
+    try:
+        if _OWNS_CLOCK:
+            world.tick()
+        else:
+            world.wait_for_tick()
+    except RuntimeError:
+        if _OWNS_CLOCK:
+            world.tick()
+        else:
+            world.wait_for_tick()
 
 
 def _hold(world, what: str) -> None:
@@ -74,6 +181,11 @@ def _hold(world, what: str) -> None:
     with dies with it and every autopilot vehicle sits at throttle 0.00 for
     ever. A fire-and-forget spawn therefore cannot produce moving traffic --
     something has to hold the TM open, which is what this does.
+
+    In synchronous mode this loop is also the world clock: exactly one client
+    may call tick(), and this is it. Anything else that wants to observe the
+    simulation must use wait_for_tick(), not tick(), or the two of them
+    double-step the server.
     """
     print(f"holding {what}; Ctrl+C to release (the TM dies with this process "
           "and the vehicles coast to a stop)", flush=True)
@@ -85,13 +197,30 @@ def _hold(world, what: str) -> None:
 
 
 
-def _vehicle_bps(world, filt, safe):
+def _vehicle_bps(world, filt, safe, base_types=""):
+    """Blueprints to spawn from, filtered by id, wheel count and body type.
+
+    `--safe` is a *wheel count*, not a body type: on 0.10.0 it admits 11 cars
+    but also 3 trucks, a van and a bus, so "50 cars --safe" measured 37 cars,
+    7 trucks, 4 buses and 1 van. `--base-type car` is the filter that means
+    cars. Both are kept because they answer different questions -- and they are
+    worth combining, since one blueprint reports base_type car on three wheels.
+    """
     bps = list(world.get_blueprint_library().filter(filt))
     if safe:
         bps = [b for b in bps if b.has_attribute("number_of_wheels")
                and int(b.get_attribute("number_of_wheels")) == 4]
+    wanted = {t.strip().lower() for t in base_types.split(",") if t.strip()}
+    if wanted:
+        bps = [b for b in bps if b.has_attribute("base_type")
+               and b.get_attribute("base_type").as_str().lower() in wanted]
     if not bps:
-        raise SystemExit(f"no blueprints match filter {filt!r}" + (" with --safe" if safe else ""))
+        detail = f"no blueprints match filter {filt!r}"
+        if safe:
+            detail += " with --safe"
+        if wanted:
+            detail += f" and --base-type {','.join(sorted(wanted))}"
+        raise SystemExit(detail)
     return bps
 
 
@@ -115,14 +244,18 @@ def _spawn_at(client, transforms, bps, autopilot, tm_port):
 
 def cmd_spawn(args):
     client = _client()
-    world = client.get_world()
+    world = _fresh(client.get_world())
+    # Sync first, then the TM: _tm_and_sync only puts the TM in sync when the
+    # world already is, so the order matters.
+    previous = None if args.no_sync else _claim_clock(world, args.delta)
     if args.seed is not None:
         random.seed(args.seed)
-        _tm_and_sync(client, world, args.tm_port).set_random_device_seed(args.seed)
+        tm = _tm_and_sync(client, world, args.tm_port)
+        tm.set_random_device_seed(args.seed)
     else:
-        _tm_and_sync(client, world, args.tm_port)
+        tm = _tm_and_sync(client, world, args.tm_port)
 
-    bps = _vehicle_bps(world, args.filter, args.safe)
+    bps = _vehicle_bps(world, args.filter, args.safe, args.base_type)
     spawn_points = world.get_map().get_spawn_points()
     random.shuffle(spawn_points)
     want = min(args.count, len(spawn_points))
@@ -135,17 +268,36 @@ def cmd_spawn(args):
     print(f"spawned {len(ids)} vehicles at spawn points; {mode}")
     if len(ids) < want:
         print(f"  note: {want - len(ids)} failed (occupied points / collisions — normal)")
-    if getattr(args, "hold", False):
-        _hold(world, f"{len(ids)} vehicles")
-    elif not args.no_autopilot:
-        print("  note: this process owns the TM — it dies on exit and the vehicles "
-              "stop. Use --hold to keep them driving.")
+    try:
+        if getattr(args, "hold", False):
+            _hold(world, f"{len(ids)} vehicles")
+        elif not args.no_autopilot:
+            print("  note: this process owns the TM — it dies on exit and the vehicles "
+                  "stop. Use --hold to keep them driving.")
+    finally:
+        # Leave the world as it was found: what this run spawned is destroyed,
+        # and the clock is handed back. A held run that just stopped otherwise
+        # leaves dozens of dead vehicles parked across the map for the next
+        # person to trip over, and a synchronous world with no ticker stops the
+        # server dead for every other client.
+        if getattr(args, "hold", False):
+            try:
+                _cleanup(client, ids, args.keep)
+            except RuntimeError as error:
+                # Never let a failed cleanup escape: the clock restore below is
+                # what keeps the server usable, and a cleanup that timed out
+                # must not cost everyone else a frozen world.
+                print(f"  cleanup failed ({error}); actors may remain — "
+                      "run `destroy` when the server is responsive again",
+                      flush=True)
+        _release_clock(world, previous, tm)
 
 
 def cmd_line(args):
     client = _client()
-    world = client.get_world()
-    _tm_and_sync(client, world, args.tm_port)
+    world = _fresh(client.get_world())
+    previous = None if args.no_sync else _claim_clock(world, args.delta)
+    tm = _tm_and_sync(client, world, args.tm_port)
     if args.seed is not None:
         random.seed(args.seed)
 
@@ -174,7 +326,7 @@ def cmd_line(args):
                        w.transform.location.z + args.z_offset),
         w.transform.rotation) for w in wps]
 
-    bps = _vehicle_bps(world, args.filter, args.safe)
+    bps = _vehicle_bps(world, args.filter, args.safe, args.base_type)
     ids = _spawn_at(client, transforms, bps, not args.no_autopilot, args.tm_port)
     mode = "parked" if args.no_autopilot else f"on autopilot (TM :{args.tm_port})"
     print(f"placed {len(ids)} vehicles in road {start.road_id} lane {start.lane_id}, "
@@ -183,12 +335,19 @@ def cmd_line(args):
     if len(ids) < len(wps):
         print(f"  note: {len(wps) - len(ids)} failed to spawn (collision at a point — "
               "raise --gap or --z-offset)")
+    try:
+        if getattr(args, "hold", False):
+            _hold(world, f"{len(ids)} vehicles in lane")
+    finally:
+        _release_clock(world, previous, tm)
 
 
 def cmd_ego(args):
     client = _client()
-    world = client.get_world()
-    bp = _configure(random.choice(_vehicle_bps(world, args.filter, safe=False)), role="hero")
+    world = _fresh(client.get_world())
+    bp = _configure(random.choice(_vehicle_bps(world, args.filter, safe=False,
+                                                base_types=getattr(args, "base_type", ""))),
+                    role="hero")
 
     # ROS 2 naming: read once, at registration, so it must be set before spawn.
     # These attributes exist on every blueprint (ActorBlueprintFunctionLibrary).
@@ -235,12 +394,80 @@ def cmd_ego(args):
     print(f"  ros: sensors attached to it nest under {base}/<sensor ros_name>")
 
 
+def _stalled(world):
+    """True if the world is synchronous with nothing advancing it.
+
+    In that state `get_actors()` hands back a stale snapshot, so a destroy can
+    report "0 actors" -- or a partial count -- while the world is still full.
+    Observed: 141 actors survived three `destroy` calls that all claimed
+    success, because a holder had been interrupted and left the clock claimed.
+    """
+    if not world.get_settings().synchronous_mode:
+        return False
+    before = world.get_snapshot().frame
+    try:
+        world.wait_for_tick(2.0)
+    except RuntimeError:
+        return True
+    return world.get_snapshot().frame == before
+
+
+def _verified_destroy(client, actors, what):
+    """Destroy, then re-read the world and report what is actually gone."""
+    world = client.get_world()
+    if _stalled(world):
+        print("WARNING the world is synchronous and nothing is ticking it, so "
+              "the actor list cannot be trusted. Restore asynchronous mode "
+              "(set-world-settings) or start the client that owns the clock, "
+              "then destroy again.")
+    wanted = {a.id for a in actors}
+    if not wanted:
+        print(f"no {what} to destroy")
+        return 0
+    for a in actors:
+        if a.type_id.startswith("controller."):
+            try:
+                a.stop()
+            except RuntimeError:
+                pass
+    try:
+        client.apply_batch_sync(
+            [carla.command.DestroyActor(i) for i in wanted], False)
+    except RuntimeError as error:
+        print(f"  batch destroy failed ({error}); falling back one at a time")
+    try:
+        world.wait_for_tick(5.0)
+    except RuntimeError:
+        pass
+    # Only retry what the batch actually left behind. Destroying every actor
+    # again unconditionally makes the client print "ERROR: failed to destroy
+    # actor N" for each one the batch already removed, which reads like a
+    # failure when nothing is wrong.
+    left = {a.id for a in world.get_actors()} & wanted
+    if left:
+        for a in actors:
+            if a.id in left:
+                try:
+                    a.destroy()
+                except RuntimeError:
+                    pass
+        try:
+            world.wait_for_tick(5.0)
+        except RuntimeError:
+            pass
+        left = {a.id for a in world.get_actors()} & wanted
+    gone = len(wanted) - len(left)
+    print(f"destroyed {gone} {what}"
+          + (f" -- {len(left)} STILL PRESENT (ids {sorted(left)[:8]})" if left else ""))
+    return gone
+
+
 def cmd_destroy(args):
     client = _client()
-    vehicles = list(client.get_world().get_actors().filter(args.filter))
+    world = _fresh(client.get_world())
+    vehicles = list(world.get_actors().filter(args.filter))
     # Autopilot detaches automatically when the actor is destroyed; no stop needed.
-    client.apply_batch_sync([DestroyActor(v) for v in vehicles], True)
-    print(f"destroyed {len(vehicles)} vehicles matching {args.filter!r}")
+    _verified_destroy(client, vehicles, f"vehicles matching {args.filter!r}")
 
 
 def main() -> None:
@@ -251,11 +478,27 @@ def main() -> None:
     ps.add_argument("--count", type=int, default=30)
     ps.add_argument("--filter", default="vehicle.*", help="blueprint filter (default all vehicles)")
     ps.add_argument("--safe", action="store_true", help="four-wheeled cars only (no bikes/oddities)")
+    ps.add_argument("--base-type", default="",
+                    help="comma-separated carla base_type values to spawn from "
+                         "(car, van, truck, bus, motorcycle, bicycle). Empty "
+                         "allows all. --safe is a wheel count and is not the "
+                         "same thing: it admits trucks, vans and a bus")
     ps.add_argument("--seed", type=int, help="reproducible blueprint/point/TM choices")
     ps.add_argument("--tm-port", type=int, default=int(os.environ.get("TM_PORT", "8000")))
+    ps.add_argument("--no-sync", action="store_true",
+                    help="leave the world asynchronous. The Traffic Manager is "
+                         "unreliable driving an async server (measured: 24 of 50 "
+                         "vehicles moving, actors decaying on their own), so sync "
+                         "is the default")
+    ps.add_argument("--delta", type=float, default=0.05,
+                    help="fixed_delta_seconds while synchronous (default 0.05 = 20 Hz)")
     ps.add_argument("--no-autopilot", action="store_true", help="spawn parked (no TM autopilot)")
     ps.add_argument("--hold", action="store_true",
                     help="stay alive pumping ticks so the TM keeps driving them (Ctrl+C to stop)")
+    ps.add_argument("--keep", action="store_true",
+                    help="leave the spawned vehicles in the world on exit. By "
+                         "default a held run destroys what it spawned, so "
+                         "stopping it puts the map back as it was")
     ps.set_defaults(func=cmd_spawn)
 
     pl = sub.add_parser("line", help="place a row of vehicles in one lane, gap metres apart")
@@ -266,11 +509,27 @@ def main() -> None:
     pl.add_argument("--z-offset", type=float, default=0.3, help="height above the road to spawn (m)")
     pl.add_argument("--filter", default="vehicle.*")
     pl.add_argument("--safe", action="store_true")
+    pl.add_argument("--base-type", default="",
+                    help="comma-separated carla base_type values to spawn from "
+                         "(car, van, truck, bus, motorcycle, bicycle). Empty "
+                         "allows all. --safe is a wheel count and is not the "
+                         "same thing: it admits trucks, vans and a bus")
     pl.add_argument("--seed", type=int)
     pl.add_argument("--tm-port", type=int, default=int(os.environ.get("TM_PORT", "8000")))
+    pl.add_argument("--no-sync", action="store_true",
+                    help="leave the world asynchronous. The Traffic Manager is "
+                         "unreliable driving an async server (measured: 24 of 50 "
+                         "vehicles moving, actors decaying on their own), so sync "
+                         "is the default")
+    pl.add_argument("--delta", type=float, default=0.05,
+                    help="fixed_delta_seconds while synchronous (default 0.05 = 20 Hz)")
     pl.add_argument("--no-autopilot", action="store_true", help="static queue (no autopilot)")
     pl.add_argument("--hold", action="store_true",
                     help="stay alive pumping ticks so the TM keeps driving them (Ctrl+C to stop)")
+    pl.add_argument("--keep", action="store_true",
+                    help="leave the spawned vehicles in the world on exit. By "
+                         "default a held run destroys what it spawned, so "
+                         "stopping it puts the map back as it was")
     pl.set_defaults(func=cmd_line)
 
     pe = sub.add_parser("ego", help="spawn one hero vehicle (autopilot off by default)")

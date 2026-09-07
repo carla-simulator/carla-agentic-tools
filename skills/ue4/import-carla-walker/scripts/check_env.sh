@@ -2,6 +2,12 @@
 # Prerequisite checks for import-carla-walker. Read-only, no sudo.
 # Exits non-zero ONLY on hard blockers; WARN means a later step handles it.
 # Run by the MCP check_prerequisites(name) tool.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _PYV_PIN="${CARLA_PY_VERSION:-}"

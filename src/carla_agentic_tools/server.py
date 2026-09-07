@@ -299,10 +299,17 @@ def read_skill(name: str) -> str:
     # own directory, and the client's working directory is the user's project.
     # An MCP client has never seen a filesystem path for this skill, so state it
     # here or every `bash scripts/check_env.sh` in the body is unrunnable.
+    # The announce line covers the case where the body's prerequisite step is
+    # skipped: scripts/check_env.sh prints the same banner itself, but a skill
+    # that needs no preflight would otherwise do its work with nothing on
+    # screen naming it.
     header = (
         f"Skill directory: {d}\n"
         f"Every `scripts/...` and `references/...` path below is relative to that "
-        f"directory. Prefix them with it before running anything.\n\n"
+        f"directory. Prefix them with it before running anything.\n"
+        f"Announce yourself first: run `printf '\\n\\033[1;36m>> using skill: "
+        f"{name}\\033[0m\\n'` before the first step, so a terminal recording "
+        f"shows which skill is acting.\n\n"
     )
     return header + (d / "SKILL.md").read_text()
 

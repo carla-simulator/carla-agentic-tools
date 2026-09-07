@@ -1,8 +1,8 @@
 ---
 name: spawn-walkers
-description: Spawns pedestrians that wander autonomously via WalkerAIController, and destroys them in the correct order. Pairs each walker.pedestrian.* with a controller.ai.walker, places them on the navigation mesh, and sends them to random navmesh points at walking speed. Use when the user asks to "spawn pedestrians/walkers", "add people/crowds", "make pedestrians walk around", or "remove the walkers". Works in async mode; sync not required.
+description: Spawns pedestrians that wander autonomously via WalkerAIController, and destroys them in the correct order. Pairs each walker.pedestrian.* with a controller.ai.walker, places them on the navigation mesh, and sends them to random navmesh points at walking speed. Use when the user asks to "spawn pedestrians/walkers", "add people/crowds", "make pedestrians walk around", or "remove the walkers". Reads the world settings first: if the world is already synchronous it never ticks it, and if it is asynchronous it makes it synchronous and drives the clock itself.
 license: MIT
-compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server WITH a pedestrian navmesh for the loaded map. Does NOT need UE4_ROOT or sync mode. Tested against CARLA 0.9.16.
+compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server WITH a pedestrian navmesh for the loaded map. Does NOT need UE4_ROOT. Tested against CARLA 0.9.16; the client-lifetime and clock-ownership behaviour below was measured on 0.10.0.
 metadata:
   group: python-api
   prerequisites: scripts/check_env.sh
@@ -29,16 +29,46 @@ crowd roams forever with no re-targeting loop. Pass `--no-wander` for a stationa
 crowd (controllers left unstarted).
 
 This needs a navmesh — validate it first with the
-[`debug-navmesh`](../debug-navmesh/SKILL.md) skill if walkers won't move. It works
-in **async** mode (the default); sync is optional (for reproducible runs).
+[`debug-navmesh`](../debug-navmesh/SKILL.md) skill if walkers won't move.
 
-**A client has to pump ticks or the crowd animates in place.** The walker nav
-update only advances while some client holds a tick subscription. Measured on
-0.10.0 in async, same spawn both ways: an idle `time.sleep()` loop gives 0/10
-walkers moving, an idle `world.wait_for_tick()` loop gives 10/10 (10.07 m in
-6 s). Pass **`--hold`** and this script does the pumping; that is also why
-CARLA's own `generate_traffic.py` ends in `while True: world.wait_for_tick()`.
-In sync mode your `world.tick()` loop pumps it just the same.
+**The controllers stop when the client that started them exits.** Same rule as
+the Traffic Manager, and it is the reason a fire-and-forget spawn leaves the
+crowd standing still. Pass **`--hold`**: the process stays alive and the crowd
+keeps walking.
+
+It is *not* primarily about pumping ticks, which is what this skill used to say.
+The two were confounded, because `--hold` both keeps the client alive and pumps.
+Separating them needed a second client owning a synchronous clock; measured on
+0.10.0, walkers spawned against a world ticked by a traffic client:
+
+| setup | result |
+|---|---|
+| spawn, process exits (another client ticking) | 0/15 move |
+| a separate client issues `start()` and stays alive | 15/15 move, then stop when it exits |
+| spawn `--hold`, observing only, never ticking | **10/10 move, 9.94 m in 8 s** |
+
+The first row has a second symptom worth knowing: a later `start()` on those
+controllers is *accepted* rather than rejected as already-started, which proves
+the original call never landed. `_ensure_walking` therefore verifies by
+displacement and re-issues (`--retries`) instead of trusting `start()`.
+
+Ticks still have to come from somewhere, of course — that is the clock rule
+below, not the walkers' own business.
+
+### The clock rule
+
+Read the world settings before doing anything:
+
+* **already synchronous** — another client owns the clock. Never call `tick()`;
+  observe with `wait_for_tick()`. Ticking a world you do not own is what
+  silently drops commands like `start()`.
+* **asynchronous** — this client may switch it to sync (`--delta`, default
+  20 Hz) and become the ticker. `--no-sync` opts out.
+
+Either way the previous settings are restored on release: a synchronous world
+with nothing ticking does not advance at all, and is indistinguishable from a
+hung server. So stop a holder with Ctrl+C (SIGINT), never `kill -9` — the
+restore runs in a `finally`.
 
 Walkers are also spawned `--z-offset` (default 2.0 m) above the navmesh point:
 spawning at the navmesh z is rejected on 0.10.0 with *"Spawn failed because of
@@ -50,7 +80,7 @@ collision at spawn position"* (+0.5 still fails, +1.0 is the first that works).
 Progress:
 - [ ] Step 1: Check prerequisites (bash scripts/check_env.sh), clear FAILs
 - [ ] Step 2: (if walkers won't move) validate the navmesh — debug-navmesh
-- [ ] Step 3: Spawn N walkers with --hold (they wander while it pumps ticks)
+- [ ] Step 3: Spawn N walkers with --hold (the controllers die with the client)
 - [ ] Step 4: Verify visually / via the world-data skill; spawn reports its count
 - [ ] Step 5: Ctrl+C the held process, then destroy (controllers first, then walkers)
 ```
@@ -68,8 +98,8 @@ bash scripts/check_env.sh
 ```bash
 source scripts/env.sh
 
-# 30 pedestrians wandering at 1.0-1.8 m/s — --hold pumps the ticks their AI
-# needs; without it they spawn and play the walk animation without moving
+# 30 pedestrians wandering at 1.0-1.8 m/s — --hold keeps this client alive, and
+# the controllers stop the moment it exits
 python3 scripts/walkers.py spawn --count 30 --hold
 
 # reproducible placement (still wanders forever)
@@ -115,14 +145,22 @@ User says: "remove all the pedestrians"
 ## Troubleshooting
 
 **Problem: walkers spawn but stand still (walk animation plays, no movement)**
-Cause: nothing is pumping ticks — the commonest case by far, and it looks
-exactly like a navmesh problem. On 0.10.0 the walker nav update advances only
-while a client holds a tick subscription.
-Solution: spawn with `--hold`, or keep a client looping `world.wait_for_tick()`
-(async) / `world.tick()` (sync). Only if it still fails, validate the navmesh
-with debug-navmesh — a PASS there rules the map out. Note `WalkerControl`
-applied by hand does not move them either without a pump, so a frozen crowd is
-not evidence about the controllers.
+Cause: in order of likelihood — (1) the spawning client exited, so its
+controllers stopped; (2) `start()` was dropped, which happens when the client
+ticked a world it did not own; (3) nothing is advancing the world at all;
+(4) the navmesh. It looks identical in all four cases.
+Solution: spawn with `--hold`. Obey the clock rule above — never `tick()` a
+world that is already synchronous. `_ensure_walking` re-issues `start()`
+automatically and reports how many are confirmed walking, so a silent failure
+is now a printed number. Only if that still says 0, validate the navmesh with
+debug-navmesh — a PASS there rules the map out.
+
+**Problem: a crowd looks frozen but `get_velocity()` is the evidence**
+Cause: on this build nav-driven walkers report `get_velocity()` ≈ 0 the entire
+time they are walking — measured 10/10 walking by displacement while every one
+of them read below 0.1 m/s.
+Solution: judge movement by displacement between two samples, never by
+velocity. This applies to your own checks as much as to this skill's.
 
 **Problem: far fewer spawned than requested (or zero)**
 Cause: `Spawn failed because of collision at spawn position`. At high counts

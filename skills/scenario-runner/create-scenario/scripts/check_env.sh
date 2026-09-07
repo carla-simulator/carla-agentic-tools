@@ -2,6 +2,12 @@
 # Prerequisite checks for create-scenario. Read-only, no sudo, fast — the MCP
 # check_prerequisites(name) tool must never hang.
 # Exits non-zero on hard blockers: no checkout, no `carla`, no `agents`, no server.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091

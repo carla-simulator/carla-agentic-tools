@@ -22,6 +22,33 @@ The server re-creates the recorded scene; `play` prints its summary. Confirm the
 replay by watching the followed actor or by inspecting the same log with
 [`query-recording`](../query-recording/SKILL.md).
 
+## The scene, the holders and the clock
+
+`play` puts the world into the state a replay needs, in this order:
+
+1. **Stops local spawn holders.** `spawn-vehicles` / `spawn-walkers` / a held
+   `create-sensor` stay resident by design, and each removes its own actors and
+   restores the clock in a `finally`, so they are sent SIGINT rather than
+   killed. `--keep-scene` skips all of this.
+2. **Puts the world back to asynchronous.** The replayer runs **server-side**,
+   so no client has to tick anything. If a client still owned a synchronous
+   clock the replay would advance only as fast as that client ticked; worse,
+   with the holder gone and the world left synchronous, nothing ticks at all
+   and the replay appears to do nothing.
+3. **Clears the scene.** A replay RECREATES the actors in the log, so it adds
+   to the world rather than replacing it: replaying a 50-car log into a live
+   50-car scene gives 100 vehicles driving through each other. Traffic signs
+   and the spectator survive — they belong to the map, not the scene.
+
+The corollary for recording: **the recorder is free to be the synchronous
+client.** Capturing under a fixed timestep is what makes a log reproducible,
+and it costs the replay nothing, because playback is driven by the server.
+
+Holder detection reads `/proc` argv rather than matching a command-line
+substring — a shell whose own command line merely quotes
+`vehicles.py spawn --hold` matches a substring search and gets signalled, which
+kills the caller by accident.
+
 ## Instructions
 
 ```

@@ -23,6 +23,80 @@ and either **show** it in a window, **save** its stream to disk, or get a one-sh
 
 Selector (any one): `--id N` · `--type sensor.camera.rgb` · `--attached-to hero`.
 
+## Capture in lock-step, not as an observer
+
+`save` takes the world's clock when the world is asynchronous, then ticks it
+once per frame: one tick, one frame. `--no-sync` keeps the old passive
+behaviour, and if another client already owns the clock this one observes
+instead (the clock rule the spawn skills follow).
+
+This is not a nicety. Capturing as a passive observer **wedges the recording
+client** on this build. Measured against a healthy server, with the world
+ticking and a second client still able to pull frames from the very same
+sensor:
+
+| write path | frames before it froze |
+|---|---|
+| `save_to_disk` inside the `listen` callback, HD | 396 |
+| same, 720p | 147 |
+| `save_to_disk` moved to the main loop, queued | 222 |
+| own cv2 encode from `raw_data` | 248 |
+| lock-step, client owns the clock | **401 of 401, no stall** |
+
+Every observer variant froze in `futex_wait` with no error and no further
+I/O — so the write path was never the cause, the delivery model was. Replacing
+`save_to_disk` and then the encoder was wasted effort; owning the clock fixed
+it outright, and matches the pattern that captured 5388 frames for a video on
+this same build.
+
+Two consequences worth knowing:
+
+* **Timing is exact.** 401 frames over 20.00 s of simulated time at 20 Hz,
+  nothing dropped or duplicated, and the run is reproducible.
+* **`save_to_disk` is still avoided** for camera frames: the buffer is
+  converted and written here (cv2, falling back to PIL). That change did not
+  fix the stall on its own, but it keeps the encode where its cost is visible.
+
+The duration budget is read off the world clock (`elapsed_seconds`), not summed
+from per-frame deltas: summing counts *observed* frames, so a consumer slower
+than the server takes minutes to "reach" 20 seconds.
+
+## Live Traffic Manager traffic and a lock-step capture are incompatible
+
+Measured on 0.10.0: with the camera owning a 20 Hz clock and a
+[[spawn-vehicles]] holder attached as an observer, **all 40 vehicles stood
+still** for the whole 500-frame capture. The Traffic Manager lives in the
+process that created it and only steps when *that* process ticks the world, so
+a TM held by one client and a clock owned by another never advances. Traffic
+moved in earlier tests only because the holder was itself the ticker — and a
+holder that ticks forces this capture into observer mode, which is what wedges
+it.
+
+So pick one:
+
+| what you want | how |
+|---|---|
+| a capture with moving traffic | record the traffic first, then **replay** it into a lock-step capture. The replayer is server-side, needs no TM, and moved 33 of 50 replayed vehicles under the camera's clock |
+| live TM traffic on screen, no frame capture | let the traffic holder own the clock and watch it in the window |
+| a capture of a static scene | camera alone, as above |
+
+The replay recipe, in order:
+
+```bash
+# 1. record the traffic while its holder owns the clock
+python3 ../spawn-vehicles/scripts/vehicles.py spawn --count 50 --base-type car --hold &
+python3 ../record-simulation/scripts/record.py clip --file /tmp/traffic.log --seconds 20
+
+# 2. stop the holder, clear the scene, spawn the camera
+# 3. capture in lock-step while the replay feeds the actors
+python3 scripts/read_sensor.py save --id <cam> --out ./frames --seconds 20 &
+python3 ../replay-recording/scripts/replay.py play --file /tmp/traffic.log --duration 20 --keep-scene
+```
+
+`--keep-scene` matters in step 3: without it the replay skill stops holders and
+puts the world back to asynchronous, which takes the clock away from the
+capture.
+
 ## Instructions
 
 ```

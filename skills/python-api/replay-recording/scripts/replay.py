@@ -33,12 +33,144 @@ import carla  # provided by the active interpreter; check_env.sh verifies this
 def _client() -> carla.Client:
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client
+
+
+def _stop_holders():
+    """SIGINT any local spawn skill that is holding actors in the world.
+
+    The spawn skills stay resident on purpose (their Traffic Manager and walker
+    controllers die with the client), and each one cleans up and restores the
+    clock in a `finally`. So the right way to end them is SIGINT, not a kill:
+    they then remove their own actors and hand the world back asynchronous,
+    which is what a replay wants -- the replayer runs SERVER-side, so nothing
+    needs to own the clock during playback, and a client that does own it just
+    paces the replay to its own tick rate.
+
+    Matching is done on /proc argv, not on a command-line substring: a shell
+    whose own command line merely *quotes* "vehicles.py spawn --hold" matches a
+    substring search and gets signalled, which is a good way to kill the caller
+    by accident (observed). argv[0] has to be a python interpreter and argv[1]
+    the script itself.
+
+    Local processes only: a holder on another machine cannot be signalled from
+    here.
+    """
+    import signal
+    scripts = ("vehicles.py", "walkers.py", "sensors.py")
+    stopped = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as handle:
+                argv = handle.read().split(b"\0")
+        except OSError:
+            continue
+        argv = [a.decode("utf-8", "replace") for a in argv if a]
+        if len(argv) < 3:
+            continue
+        if os.path.basename(argv[0]).split(".")[0] not in ("python", "python3"):
+            continue
+        if os.path.basename(argv[1]) not in scripts:
+            continue
+        if "spawn" not in argv[2:] or "--hold" not in argv:
+            continue
+        pid = int(entry)
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, signal.SIGINT)
+        except OSError:
+            continue
+        stopped.append((pid, os.path.basename(argv[1])))
+        print(f"stopped holder pid {pid}: {os.path.basename(argv[1])} "
+              "(SIGINT, so it cleans up its own actors)")
+    # Let each one run its finally block: destroy its actors, restore the clock.
+    waited = 0
+    while any(_alive(pid) for pid, _ in stopped) and waited < 2000:
+        waited += 1
+    return stopped
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _release_clock_if_stalled(client):
+    """Put the world back to asynchronous if nothing is ticking it.
+
+    After the holders exit there is no clock owner, and a synchronous world
+    with no ticker does not advance -- the replay would sit there doing
+    nothing. The replayer is server-driven, so asynchronous is the correct
+    mode for it.
+    """
+    world = client.get_world()
+    settings = world.get_settings()
+    if not settings.synchronous_mode:
+        return
+    settings.synchronous_mode = False
+    settings.fixed_delta_seconds = None
+    world.apply_settings(settings)
+    print("world set back to asynchronous: the replayer is server-side and "
+          "needs no client to tick it")
+
+
+def _clear_scene(client):
+    """Empty the world before replaying.
+
+    A replay RECREATES every actor the log holds, so anything already in the
+    world is duplicated rather than replaced: replaying a 50-car log into a
+    live 50-car scene gives 100 vehicles driving through each other, which is
+    what made the first replay here unreadable. Clearing first means what you
+    see is the recording and nothing else.
+
+    Traffic signs and the spectator stay -- they belong to the map, not to the
+    scene.
+    """
+    world = client.get_world()
+    world.wait_for_tick()
+    doomed = [a for a in world.get_actors()
+              if a.type_id.startswith(("vehicle.", "walker.", "controller.",
+                                       "sensor."))]
+    if not doomed:
+        return 0
+    # Controllers before their walkers, or the walkers leave ghost actors.
+    doomed.sort(key=lambda a: 0 if a.type_id.startswith("controller.") else 1)
+    for a in doomed:
+        if a.type_id.startswith("controller."):
+            try:
+                a.stop()
+            except RuntimeError:
+                pass
+    try:
+        responses = client.apply_batch_sync(
+            [carla.command.DestroyActor(a.id) for a in doomed], False)
+        gone = sum(1 for r in responses if not r.error)
+    except RuntimeError:
+        gone = 0
+        for a in doomed:
+            try:
+                if a.destroy():
+                    gone += 1
+            except RuntimeError:
+                pass
+    print(f"cleared the scene: removed {gone} actor(s) before replaying "
+          "(--keep-scene to replay on top of what is there)")
+    return gone
 
 
 def cmd_play(args: argparse.Namespace) -> None:
     client = _client()
+    if not args.keep_scene:
+        _stop_holders()
+        _release_clock_if_stalled(client)
+        _clear_scene(client)
     if args.ignore_hero:
         client.set_replayer_ignore_hero(True)
     if args.ignore_spectator:
@@ -82,6 +214,11 @@ def main() -> None:
     pp.add_argument("--map-override", default="", help="replay onto a different map")
     pp.add_argument("--ignore-hero", action="store_true", help="do not replay the hero actor")
     pp.add_argument("--ignore-spectator", action="store_true", help="do not move the spectator")
+    pp.add_argument("--keep-scene", action="store_true",
+                    help="do not clear the world first. The replay recreates "
+                         "the log's actors, so anything already there is "
+                         "duplicated — 50 live cars plus a 50-car log is 100 "
+                         "vehicles sharing the same road")
     pp.set_defaults(func=cmd_play)
 
     psp = sub.add_parser("speed", help="change the running replay's speed")

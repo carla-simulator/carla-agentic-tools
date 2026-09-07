@@ -2,7 +2,7 @@
 name: spawn-vehicles
 description: Spawns vehicles on a running CARLA server and destroys them — scattered across the map's spawn points on Traffic Manager autopilot, a row queued in a single lane at a fixed spacing, or a single hero/ego vehicle (optionally named for native ROS 2 publishing with --ros-name). Covers blueprint filtering, the atomic autopilot hand-off, and cleanup. Use when the user asks to "spawn vehicles/cars/traffic", "add N cars driving around", "put cars in a lane 15 m apart", "spawn the ego/hero vehicle", or "remove the vehicles".
 license: MIT
-compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Does NOT need UE4_ROOT or sync mode. Tested against CARLA 0.9.16.
+compatibility: Any OS with the CARLA PythonAPI installed for the active interpreter and a reachable, already-running CARLA server. Does NOT need UE4_ROOT. Puts the world in synchronous mode by default (--no-sync opts out), and restores the previous settings on release. Tested against CARLA 0.9.16; the Traffic Manager and clock-ownership behaviour was measured on 0.10.0.
 metadata:
   group: python-api
   prerequisites: scripts/check_env.sh
@@ -21,14 +21,48 @@ predefined **spawn points** and, by default, handed to the **Traffic Manager**
 autopilot at spawn time so they drive the road network autonomously. `destroy`
 removes them.
 
-Works in async mode (the default); sync is optional and only needs the TM put in
-sync too — which `spawn` does automatically when the world is synchronous.
+**`spawn` and `line` make the world synchronous.** The Traffic Manager is not
+reliable driving an asynchronous server: it runs its own loop against a server
+advancing at whatever rate it likes. Measured on 0.10.0, async, 50 autopilot
+vehicles with the spawning client alive and holding the TM: only 24 were
+moving, and the actor count decayed on its own — 50 vehicles down to 39 and 15
+walkers down to 5 over a couple of minutes. With a fixed timestep and the TM in
+sync, 37 of 50 move and nothing decays. `--no-sync` keeps the old behaviour.
+
+### The TM cannot be driven by another client's tick
+
+The Traffic Manager steps only when the process that created it ticks the
+world. Measured on 0.10.0: with a camera client owning a 20 Hz clock and this
+skill attached as an observer, its 40 vehicles never moved at all — no error,
+just a frozen scene. So a held traffic pool and a lock-step frame capture
+cannot share a world; record the traffic here and replay it into the capture
+instead ([[read-sensor]] has the recipe).
+
+### The clock rule
+
+The world settings are read before anything else happens:
+
+* **asynchronous** — this client switches it to synchronous (`--delta`, default
+  0.05 s = 20 Hz), puts the TM in sync, and becomes the ticker.
+* **already synchronous** — another client owns the clock. This one never calls
+  `tick()`; it observes with `wait_for_tick()`. Ticking a world you do not own
+  silently drops commands — it is what stopped `spawn-walkers`' `start()` from
+  landing.
+
+The previous settings are restored on release, because a synchronous world with
+nothing ticking does not advance and looks exactly like a hung server. Stop a
+holder with Ctrl+C, never `kill -9`: the restore is in a `finally`.
 
 **The Traffic Manager lives in the client process that created it.** So a
 spawn that exits leaves the vehicles registered with a dead TM: they sit at
 `throttle 0.00` for ever, in async *and* sync. Pass **`--hold`** to keep the TM
 open (Ctrl+C releases it, and the vehicles then coast to a stop). Measured on
 0.10.0: without `--hold`, 0/50 vehicles move; with it, 49/50 move.
+
+The same is true of `controller.ai.walker` in [[spawn-walkers]] — its
+controllers stop when their client exits — so a scene with both wants two
+resident processes: this one owning the clock, the walker one held as an
+observer.
 
 ## Instructions
 
@@ -56,8 +90,15 @@ bash scripts/check_env.sh
 source scripts/env.sh
 
 # 40 vehicles driving around on autopilot — --hold keeps the TM (and so the
-# driving) alive; without it they spawn, then freeze when this command returns
+# driving) alive; without it they spawn, then freeze when this command returns.
+# The world is put in sync at 20 Hz and this client ticks it.
 python3 scripts/vehicles.py spawn --count 40 --hold
+
+# leave the world asynchronous (the old behaviour; the TM misbehaves)
+python3 scripts/vehicles.py spawn --count 40 --hold --no-sync
+
+# a different fixed timestep
+python3 scripts/vehicles.py spawn --count 40 --hold --delta 0.033
 
 # four-wheeled cars only, reproducible
 python3 scripts/vehicles.py spawn --count 30 --safe --seed 42
@@ -168,6 +209,14 @@ world with nothing calling `world.tick()` (set-world-settings).
 Cause: world sync but TM async (mismatch).
 Solution: keep both in sync (set-world-settings couples them; `spawn` also sets
 TM sync). Use the same `--tm-port` throughout.
+
+**Problem: the server appears hung — every client blocks or times out**
+Cause: the world was left synchronous with nothing ticking, usually because a
+holder was `kill -9`ed instead of interrupted, so its restore never ran.
+Solution: set `synchronous_mode = False` from any client
+(set-world-settings), then start over. Note a frozen sync world also hands out
+stale snapshots, so `get_actors()` can come back empty and `destroy` can report
+0 actors — fix the clock before believing either.
 
 ## Outputs
 

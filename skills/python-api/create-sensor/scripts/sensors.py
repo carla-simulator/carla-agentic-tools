@@ -50,6 +50,20 @@ _CLOUD_TOPICS = (("/point_cloud", "sensor_msgs/PointCloud2"),)
 _ROS_UNSUPPORTED = ("other.lane_invasion", "other.obstacle", "other.rss")
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def ros_topics_for(type_id: str, base: str):
     """[(topic, msg_type)] the server publishes for this sensor, or []."""
     short = type_id[len("sensor."):] if type_id.startswith("sensor.") else type_id
@@ -73,7 +87,7 @@ def ros_topics_for(type_id: str, base: str):
 def _client():
     c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                      int(os.environ.get("CARLA_PORT", "2000")))
-    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return c
 
 
@@ -82,14 +96,14 @@ def _full_type(t: str) -> str:
 
 
 def cmd_types(_):
-    bl = _client().get_world().get_blueprint_library().filter("sensor.*")
+    bl = _fresh(_client().get_world()).get_blueprint_library().filter("sensor.*")
     print("sensor blueprints:")
     for b in bl:
         print(f"  {b.id}")
 
 
 def cmd_spawn(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     bp = world.get_blueprint_library().find(_full_type(args.type))
     for kv in args.attr or []:
         k, _, v = kv.partition("=")
@@ -170,7 +184,7 @@ def cmd_ros(args):
     is what lets ASensor::Tick run without a Python client — the difference
     between a sensor that publishes and one that is silent. Idempotent.
     """
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     if args.id is not None:
         actor = world.get_actors().find(args.id)
         if actor is None:
@@ -189,14 +203,85 @@ def cmd_ros(args):
         print(f"id={s.id} ({s.type_id}) enabled_for_ros={state}")
 
 
+def _stalled(world):
+    """True if the world is synchronous with nothing advancing it.
+
+    In that state `get_actors()` hands back a stale snapshot, so a destroy can
+    report "0 actors" -- or a partial count -- while the world is still full.
+    Observed: 141 actors survived three `destroy` calls that all claimed
+    success, because a holder had been interrupted and left the clock claimed.
+    """
+    if not world.get_settings().synchronous_mode:
+        return False
+    before = world.get_snapshot().frame
+    try:
+        world.wait_for_tick(2.0)
+    except RuntimeError:
+        return True
+    return world.get_snapshot().frame == before
+
+
+def _verified_destroy(client, actors, what):
+    """Destroy, then re-read the world and report what is actually gone."""
+    world = client.get_world()
+    if _stalled(world):
+        print("WARNING the world is synchronous and nothing is ticking it, so "
+              "the actor list cannot be trusted. Restore asynchronous mode "
+              "(set-world-settings) or start the client that owns the clock, "
+              "then destroy again.")
+    wanted = {a.id for a in actors}
+    if not wanted:
+        print(f"no {what} to destroy")
+        return 0
+    for a in actors:
+        if a.type_id.startswith("controller."):
+            try:
+                a.stop()
+            except RuntimeError:
+                pass
+    try:
+        client.apply_batch_sync(
+            [carla.command.DestroyActor(i) for i in wanted], False)
+    except RuntimeError as error:
+        print(f"  batch destroy failed ({error}); falling back one at a time")
+    try:
+        world.wait_for_tick(5.0)
+    except RuntimeError:
+        pass
+    # Only retry what the batch actually left behind. Destroying every actor
+    # again unconditionally makes the client print "ERROR: failed to destroy
+    # actor N" for each one the batch already removed, which reads like a
+    # failure when nothing is wrong.
+    left = {a.id for a in world.get_actors()} & wanted
+    if left:
+        for a in actors:
+            if a.id in left:
+                try:
+                    a.destroy()
+                except RuntimeError:
+                    pass
+        try:
+            world.wait_for_tick(5.0)
+        except RuntimeError:
+            pass
+        left = {a.id for a in world.get_actors()} & wanted
+    gone = len(wanted) - len(left)
+    print(f"destroyed {gone} {what}"
+          + (f" -- {len(left)} STILL PRESENT (ids {sorted(left)[:8]})" if left else ""))
+    return gone
+
+
 def cmd_destroy(args):
     client = _client()
-    sensors = list(client.get_world().get_actors().filter(args.filter))
-    for s in sensors:
-        if s.is_listening:
-            s.stop()
-        s.destroy()
-    print(f"destroyed {len(sensors)} sensors matching {args.filter!r}")
+    world = _fresh(client.get_world())
+    sensors = list(world.get_actors().filter(args.filter))
+    for sensor in sensors:
+        try:
+            if sensor.is_listening:
+                sensor.stop()
+        except RuntimeError:
+            pass
+    _verified_destroy(client, sensors, f"sensors matching {args.filter!r}")
 
 
 def main() -> None:
@@ -215,6 +300,9 @@ def main() -> None:
     ps.add_argument("--roll", type=float, default=0.0)
     ps.add_argument("--attachment", choices=("Rigid", "SpringArm", "SpringArmGhost"), default="Rigid")
     ps.add_argument("--attr", action="append", help="blueprint attribute key=value (repeatable)")
+    ps.add_argument("--hold", action="store_true",
+                    help="stay resident and destroy the sensor on exit, so the "
+                         "world is left as it was found")
     ps.add_argument("--ros", action="store_true",
                     help="enable_for_ros() after spawn — required for the sensor to publish")
     ps.add_argument("--ros-name", help="ROS topic segment (default actor<id>)")

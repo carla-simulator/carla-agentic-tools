@@ -55,16 +55,17 @@ that environment is often the task at hand.
 ## Two servers, one library
 
 The skills, and everything that decides which are usable, exist in both
-languages. Which one you install decides only what has to be on the machine:
+languages. Which one you pick decides only what has to be on the machine:
 
-| | needs | get it with |
+| | needs | runner |
 |---|---|---|
-| **npm** | Node >= 12, nothing else | `npx -y @carla-simulator/agentic-tools` |
-| **PyPI** | Python >= 3.10 | `uvx carla-agentic-tools` |
+| **npm** | Node >= 12, nothing else | `npx` |
+| **PyPI** | Python >= 3.10 | `uvx` |
 
 The npm package carries the skills in its own tarball and has **no runtime
-dependencies** — no Python, no `uv`, no install step at first run. The Python
-package is the same thing for people whose tooling is already Python.
+dependencies** — no Python, no `uv`, no build step at first run. The Python
+package is the same thing for people whose tooling is already Python. Both are
+the same server at the same version, so pick whichever runtime you already have.
 
 The skills themselves still shell out to `bash`, and the ones that drive the
 CARLA client need an interpreter with the `carla` wheel — that is the `PYTHON`
@@ -76,25 +77,79 @@ visible to the other.
 
 ## Install
 
-```bash
-# npm — no Python needed
-npx -y @carla-simulator/agentic-tools
+**There is usually nothing to install.** An MCP client starts a server by
+running a command, and both packages ship an on-demand runner, so the command
+you register *is* the install:
 
-# PyPI — if your tooling is already Python
-uvx carla-agentic-tools
-pipx install carla-agentic-tools     # or a durable install
+```bash
+npx -y @carla-simulator/agentic-tools   # npm
+uvx carla-agentic-tools                 # PyPI
 ```
 
-Both are the same server at the same version. Pick whichever runtime you already
-have; the section above says what each needs.
+Run either in a terminal to check it before wiring it into a client. A healthy
+start is **silent** — it says nothing on either stream and blocks waiting for
+MCP traffic on stdin, so a process that just sits there is the success case, and
+Ctrl-C ends it. To see it actually answer, hand it a handshake:
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"c","version":"1"}}}' \
+  | npx -y @carla-simulator/agentic-tools
+```
+
+which replies with the server name, the version you resolved, and the
+instructions the client will load.
+
+The first launch downloads the package and starts it. Later launches re-resolve
+the version, so a release published upstream arrives on its own — nobody
+reinstalls anything. That resolution is the runner's behaviour, not the client's:
+no agent is tracking versions on your behalf, and the client only ever re-runs
+the string it was given.
 
 Diagnostics go to stderr and stdio is inherited, never piped, so stdout stays a
 clean MCP stream and the client talks to the server directly.
 
+### Following latest, or pinning
+
+Tracking latest is usually right for a skill library that is still growing, but
+the version is part of the command, so changing that behaviour is an args edit
+and needs no reinstall:
+
+| args | effect |
+|---|---|
+| `-y @carla-simulator/agentic-tools` | latest, re-resolved at each launch |
+| `-y @carla-simulator/agentic-tools@<version>` | frozen at one version |
+| `-y @carla-simulator/agentic-tools@latest` | forces past a stale `npx` cache |
+
+For `uvx` the same three are `carla-agentic-tools`, `carla-agentic-tools@<version>`,
+and `uvx --refresh carla-agentic-tools`. The middle row is what to use when a
+result has to be reproducible later; the last is worth knowing because `npx` can
+serve a cached copy after a new release, and a user stuck on an old version is
+almost always looking at that.
+
+### A durable install instead
+
+Installing the package outright puts a `carla-agentic-tools` executable on
+`PATH`, and the client then launches that with no network access and no
+resolution step:
+
+```bash
+npm install -g @carla-simulator/agentic-tools   # npm
+pipx install carla-agentic-tools                # PyPI
+```
+
+Register it as `command: "carla-agentic-tools"` with empty `args`. Upgrades
+become explicit (`npm update -g @carla-simulator/agentic-tools`, `pipx upgrade
+carla-agentic-tools`), which is the point: this is the shape for offline and
+air-gapped machines, for CI, and for anywhere a pinned version matters more than
+getting new skills as they land.
+
 ## Registering with an MCP client
 
-Point the client at the command. **No paths go here** — you would have to know
-them before the skills that create them have run:
+The server is ordinary stdio MCP with nothing client-specific in it, so any MCP
+client can run it. Most take the same block — Claude Code (`.mcp.json` beside
+your project, or `~/.claude.json`), Claude Desktop, Cursor (`~/.cursor/mcp.json`),
+Windsurf (`~/.codeium/windsurf/mcp_config.json`), Gemini CLI
+(`~/.gemini/settings.json`):
 
 ```json
 {
@@ -107,16 +162,41 @@ them before the skills that create them have run:
 }
 ```
 
-Swap `command`/`args` for `uvx` + `["carla-agentic-tools"]` for the Python
-package instead. Claude Code reads `.mcp.json` from the project directory; Cursor and
-Claude Desktop take the same block in their own config. The CLI equivalent:
+Swap `command`/`args` for `uvx` + `["carla-agentic-tools"]` to run the Python
+package instead. **No paths go here** — you would have to know them before the
+skills that create them have run.
+
+Two clients want a different shape for the same server:
+
+- **VS Code** (`.vscode/mcp.json`, or the user `mcp.json`) uses `servers`, not
+  `mcpServers`, and wants an explicit `"type": "stdio"`. A block copied from
+  above is ignored with no error, which is the most common setup mistake.
+- **Codex** uses TOML in `~/.codex/config.toml`:
+
+  ```toml
+  [mcp_servers.carla]
+  command = "npx"
+  args = ["-y", "@carla-simulator/agentic-tools"]
+  ```
+
+Clients with a CLI will write that entry for you:
 
 ```bash
-claude mcp add carla -s user -- carla-agentic-tools
+claude mcp add carla -s user -- npx -y @carla-simulator/agentic-tools
+codex mcp add carla -- npx -y @carla-simulator/agentic-tools
+gemini mcp add -s user carla npx -- -y @carla-simulator/agentic-tools
+code --add-mcp '{"name":"carla","command":"npx","args":["-y","@carla-simulator/agentic-tools"]}'
 ```
 
-Five tools: `list_skills` (optionally `group`-filtered), `read_skill(name)`,
-`check_prerequisites(name)`, `get_config()`, `set_config(paths)`.
+Each of these only records the entry — nothing is fetched until the client first
+starts the server. Note where the `--` falls: for `claude` and `codex` it
+separates the whole server command from the client's own flags, while `gemini`
+takes the command as a positional and needs the `--` after it so npx's `-y` is
+not read as a flag for `gemini` itself.
+
+Five tools, whatever the client: `list_skills` (optionally `group`-filtered),
+`read_skill(name)`, `check_prerequisites(name)`, `get_config()`,
+`set_config(paths)`.
 
 ## Paths, and when you are asked for them
 

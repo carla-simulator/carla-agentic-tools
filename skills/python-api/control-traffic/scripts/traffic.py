@@ -35,10 +35,24 @@ import os
 import carla  # provided by the active interpreter; check_env.sh verifies this
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _client():
     c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                      int(os.environ.get("CARLA_PORT", "2000")))
-    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return c
 
 
@@ -104,7 +118,7 @@ def cmd_global(args):
 
 
 def cmd_vehicle(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     vehicles = _resolve(world, args)
     if not vehicles:
         raise SystemExit("no matching vehicle (spawn one, or check --id/--role/--filter)")
