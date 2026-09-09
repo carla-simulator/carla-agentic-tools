@@ -53,14 +53,15 @@ recommendation and prints the commands rather than running them.
 | Your CARLA | ScenarioRunner branch | Notes |
 |---|---|---|
 | 0.9.14 / 0.9.15 / 0.9.16 (UE4) | `master` | the live branch; 0.9.16 released Sep 2025 |
-| 0.10.0 (UE5) | `ue5-master` | Town10HD_Opt **only**; 11 of 101 configs ported; forked Jun 2024 |
+| 0.10.0 / 1.0 (UE5) | `ue5-master` | Town10HD_Opt **only**; 11 of 101 configs ported; forked Jun 2024. The UE5 line reports `0.10.0` before the 1.0 release and `1.x` after; the same branch is the match for both until scenario_runner publishes a 1.0 branch — check its branch list first |
 | leaderboard build (0.9.14+large maps) | `leaderboard-2.1` *or* `leaderboard-2.0` | **byte-identical branches** — same commit |
 | 0.9.10.1 | `leaderboard-1.0` | Leaderboard 1.0 only |
 | 0.9.13 and older | the matching `0.9.x` tag/branch | frozen, unsupported |
 
 The minimum enforced in code is `MIN_CARLA_VERSION = '0.9.14'` on `master`, and
 it is a hard `ImportError` at startup, not a warning. `0.10.0` passes that check
-because version comparison is numeric per component (`0.10 > 0.9`).
+because version comparison is numeric per component (`0.10 > 0.9`), and `1.x`
+passes it on the major alone.
 
 ### Step 3: Clone
 

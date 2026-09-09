@@ -16,11 +16,12 @@ metadata:
 > project, not that directory, so prefix them with its absolute path or the
 > command is not found.
 
-**5.5 and 5.8 are the same CARLA line, not parallel products.** Both branches
-declare `CARLA 0.10.0`; `PythonAPI/carla/src/Sensor.cpp` is byte-identical
-between them, `Actor.cpp` differs by 2 lines and `World.cpp` by 22. 5.8 is the
-later revision — the one continuing toward 1.0 — so treat 5.5 as an earlier
-point release.
+**5.5 and 5.8 are the same CARLA line, not parallel products.**
+`PythonAPI/carla/src/Sensor.cpp` is byte-identical between the branches,
+`Actor.cpp` differs by 2 lines and `World.cpp` by 22. 5.8 is the later revision —
+the one released as **CARLA 1.0** — so treat 5.5 as an earlier point release. It
+still declares `0.10.0`, which is also what every ue58 build reported before that
+release, so the version string does not separate the two: the branch does.
 
 The practical consequence: **the `ue58` skills are the procedures for 5.5 too**,
 minus the five gaps below. There is no ue5 mirror of each skill because there is

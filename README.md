@@ -33,9 +33,12 @@ carla-agentic-tools/
     │                         #   install-scenario-runner, install-leaderboard
     ├── python-api/           # drives any running server (world-data, create-sensor, …)
     ├── ue4/                  # needs a UE4 checkout (build, package, run, import)
+    ├── ue5/                  # what UE 5.5 cannot do that 5.8 can
+    ├── ue58/                 # needs a UE 5.8 checkout (build, package, run, import, Autoware)
     ├── ros2/                 # native ROS 2 interface (publishers, msg types, RViz)
     ├── scenario-runner/      # CARLA's scenario engine (scenarios, OpenSCENARIO, routes)
-    └── leaderboard/          # the AD Leaderboard on top of it (agents, evaluation, scoring)
+    ├── leaderboard/          # the AD Leaderboard on top of it (agents, evaluation, scoring)
+    └── scenic/               # probabilistic scenarios (write and run .scenic)
 ```
 
 **Starting from nothing?** Three skills, in order: `download-carla` (fetches a
@@ -51,6 +54,28 @@ need that engine's checkout. `list_skills` reports the group and whether its
 environment is present (`available: false` plus a reason when e.g.
 `CARLA_UE4_ROOT` is unset); unavailable skills are still listed, because creating
 that environment is often the task at hand.
+
+### Which CARLA each group is about
+
+The group names are engine branches, not release numbers, because one release
+number spans two of them:
+
+| Group | Branch | CARLA |
+|---|---|---|
+| `ue4` | `ue4-dev` | 0.9.x, through 0.9.16 |
+| `ue5` | `ue5-dev` | the UE5 line at UE 5.5 — an earlier revision, reports `0.10.0` |
+| `ue58` | `ue58-dev` | the same line at UE 5.8 — **CARLA 1.0** |
+
+`ue5-dev` and `ue58-dev` are one line, not parallel products, so the `ue58`
+skills are the procedures for 5.5 too, minus five gaps that
+[`check-ue5-limitations`](skills/ue5/check-ue5-limitations/SKILL.md) enumerates.
+Pre-1.0 builds of `ue58-dev` report `0.10.0`, and that is the version string most
+measurements in this repo were taken against — where a skill says `0.10.0`, read
+it as naming the UE5 line unless it is quoting a specific build.
+
+`python-api`, `scenario-runner`, `leaderboard`, `scenic` and `ros2` are not tied
+to an engine: they bind to a running server, a checkout of the companion repo, or
+CARLA's native ROS 2 sources.
 
 ## Two servers, one library
 

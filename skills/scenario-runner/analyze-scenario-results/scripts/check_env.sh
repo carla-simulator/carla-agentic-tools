@@ -35,7 +35,7 @@ else
     ue4) ok "flavor ue4 — CARLA 0.9.14+ (UE4). Scenarios in Town01..Town10HD_Opt" ;;
     ue5) ok "flavor ue5 — CARLA 0.10.0 (UE5). Town10HD_Opt only; just 11 of 101 configs were ported to it"
          ok "  blueprints are 'vehicle.lincoln.mkz' (no _2017); weather behaviours are disabled" ;;
-    ue58) ok "flavor ue58 — CARLA 0.10.0 on UE 5.8. Towns 1-5 + Town10HD_Opt, all as _Opt"
+    ue58) ok "flavor ue58 — CARLA 1.0 on UE 5.8 (pre-release builds report 0.10.0). Towns 1-5 + Town10HD_Opt, all as _Opt"
           ok "  96 configs, every one resolving to a scenario class (ue5-master had 11 runnable:"
           ok "  the rest named non-_Opt towns that do not exist in the UE5 content)"
           ok "  ego is 'vehicle.lincoln.mkz'; vision blockers are 'static.prop.dumpster'"
