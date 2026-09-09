@@ -5,6 +5,37 @@ a `SKILL.md` plus executable scripts with its failure modes encoded, so an agent
 discovers the right procedure and checks its prerequisites instead of improvising
 from the Makefile.
 
+## Quick start
+
+```bash
+claude mcp add carla -s user -- npx -y github:carla-simulator/carla-agentic-tools
+codex mcp add carla -- npx -y github:carla-simulator/carla-agentic-tools
+```
+
+Cursor, VS Code, Windsurf and the rest take the same two fields in their MCP
+config (`~/.cursor/mcp.json`, and note VS Code wants `servers` + `"type": "stdio"`):
+
+```json
+{"mcpServers": {"carla": {"command": "npx", "args": ["-y", "github:carla-simulator/carla-agentic-tools"]}}}
+```
+
+Or install it as a plugin, which writes no config at all. In Claude Code:
+
+```
+/plugin marketplace add carla-simulator/carla-agentic-tools
+/plugin install carla@carla-agentic-tools
+```
+
+In Codex, from a shell — and in Cursor, from **Customize** in the sidebar:
+
+```bash
+codex plugin marketplace add carla-simulator/carla-agentic-tools
+```
+
+Needs Node >= 12 and `git`, and fetches on first launch. **[Install](#install)**
+below covers pinning to a tag, machines without `git`, the Python
+implementation, and how to check a server before wiring it into a client.
+
 Nothing in a skill is client-specific — plain Markdown and POSIX shell. A
 standalone [MCP](https://modelcontextprotocol.io) server serves them to any MCP
 client, and comes in **two implementations**: a self-contained Node one and a
@@ -12,8 +43,9 @@ Python one. Same skills, same answers, no wrapper between them —
 `tests/test_node_parity.py` runs both and diffs what they return.
 
 **No package registry is in the loop.** Both install straight from this
-repository — by git ref or release tarball — so a git tag *is* the release. On
-Claude Code it also installs as a plugin, in one line.
+repository — by git ref or release tarball — so a git tag *is* the release. It
+also ships as a plugin for the clients that have a marketplace, which registers
+the server for you.
 
 This repo is independent of any CARLA checkout: it targets a **specific CARLA
 instance at runtime**, recorded on first use, so one install can drive any build.
@@ -24,6 +56,7 @@ instance at runtime**, recorded on first use, so one install can drive any build
 carla-agentic-tools/
 ├── pyproject.toml            # hatchling; maps skills/ into the wheel
 ├── package.json              # the Node package; ships bin/ lib/ skills/ (never published)
+├── plugin.json, mcp.json     # Agent Plugin manifests, for Cursor and Codex
 ├── .claude-plugin/           # plugin + marketplace manifests, for Claude Code
 ├── bin/carla-agentic-tools.js # npx and plugin entry point
 ├── lib/                      # the Node server: server.js, skills.js, config.js
@@ -263,6 +296,26 @@ To try a working tree without installing anything:
 claude --plugin-dir /path/to/carla-agentic-tools
 ```
 
+### Cursor and Codex: the same thing, as an Agent Plugin
+
+`plugin.json` and `mcp.json` at the repo root are the
+[Agent Plugin](https://agent-plugins.org) format, which Cursor and Codex both
+read. They declare the same stdio server, resolved from `${PLUGIN_ROOT}`, so a
+marketplace install gets the identical five tools with no runner and no `npx`:
+
+```bash
+codex plugin marketplace add carla-simulator/carla-agentic-tools
+```
+
+Cursor installs from **Customize** in the sidebar, at project or user scope, and
+also accepts a one-click MCP deeplink if you would rather skip the plugin layer.
+Claude Code needs its own `.claude-plugin/` manifests because it does not read a
+root `plugin.json` — same server, two manifest dialects, kept in agreement by
+`tests/test_version.py`.
+
+Either client can also just register the server directly, per **Registering with
+an MCP client** above; the plugin route only saves you writing the config.
+
 Five tools, whatever the client: `list_skills` (optionally `group`-filtered),
 `read_skill(name)`, `check_prerequisites(name)`, `get_config()`,
 `set_config(paths)`.
@@ -350,8 +403,8 @@ plugin — so `claude plugin tag` creates `carla--v0.6.0`, after checking that
 `plugin.json` and the marketplace entry agree. It refuses on a dirty tree, which
 is the behaviour you want from a release step.
 
-The version lives in four files — `pyproject.toml`,
-`src/carla_agentic_tools/__init__.py`, `package.json` and
+The version lives in five files — `pyproject.toml`,
+`src/carla_agentic_tools/__init__.py`, `package.json`, `plugin.json` and
 `.claude-plugin/plugin.json` — and `tests/test_version.py` fails on drift
 between any of them.
 

@@ -1,4 +1,4 @@
-"""The version is written in four places; make drift a test failure."""
+"""The version is written in five places; make drift a test failure."""
 import re
 import sys
 from pathlib import Path
@@ -152,3 +152,47 @@ def test_plugin_runs_a_file_that_ships():
         target = next(a for a in spec["args"] if "${CLAUDE_PLUGIN_ROOT}" in a)
         rel = target.replace("${CLAUDE_PLUGIN_ROOT}/", "")
         assert (REPO / rel).exists(), f"{name} runs {rel}, which is missing"
+
+
+# --- the portable Agent Plugin manifests (Cursor, Codex) -------------------
+
+def _portable_manifest() -> dict:
+    import json
+    return json.loads((REPO / "plugin.json").read_text())
+
+
+def _portable_mcp() -> dict:
+    import json
+    return json.loads((REPO / "mcp.json").read_text())
+
+
+def test_portable_version_matches_pyproject():
+    """Cursor and Codex read the root plugin.json; Claude Code reads
+    .claude-plugin/plugin.json. Both must name the same release."""
+    got = _portable_manifest()["version"]
+    assert got == _pyproject_version(), (
+        f"plugin.json says {got}, pyproject.toml says {_pyproject_version()}"
+    )
+
+
+def test_portable_and_claude_manifests_agree():
+    """Same plugin, two manifest dialects — a name split would install the same
+    server under two identities."""
+    portable, claude = _portable_manifest(), _plugin_manifest()
+    assert portable["name"] == claude["name"], (
+        f"plugin.json is {portable['name']!r}, "
+        f".claude-plugin/plugin.json is {claude['name']!r}"
+    )
+
+
+def test_portable_mcp_runs_a_file_that_ships():
+    """The portable manifest resolves the server relative to ${PLUGIN_ROOT}, so
+    the path is checked against the repo the same way."""
+    servers = _portable_mcp()["mcpServers"]
+    assert servers, "mcp.json must declare the server"
+    for name, spec in servers.items():
+        assert spec["type"] == "stdio", f"{name} must be a stdio server"
+        assert spec["cwd"] == "${PLUGIN_ROOT}", \
+            f"{name} must resolve from ${{PLUGIN_ROOT}}, got {spec['cwd']!r}"
+        script = next(a for a in spec["args"] if a.endswith(".js"))
+        assert (REPO / script).exists(), f"{name} runs {script}, which is missing"
