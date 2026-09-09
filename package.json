@@ -1,6 +1,7 @@
 {
   "name": "@carla-simulator/agentic-tools",
-  "version": "0.5.1",
+  "version": "0.6.0",
+  "private": true,
   "description": "MCP server exposing a library of vetted CARLA procedures (skills) for build, packaging, simulation, and ROS 2. Self-contained: no Python needed.",
   "keywords": [
     "carla",

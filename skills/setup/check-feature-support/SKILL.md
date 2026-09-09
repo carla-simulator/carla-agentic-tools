@@ -68,14 +68,17 @@ target.
 
 ### Engine lines, and the version number
 
-UE 5.8 (`ue58-dev`) is the line that continues — `0.10.0` today, heading for
-**1.0**. UE 5.5 (`ue5-dev`) is an *earlier revision of the same line*: both
-declare 0.10.0, and `PythonAPI/carla/src/Sensor.cpp` is byte-identical between
-them. So the verdicts below apply to both engines unless a row says otherwise,
-and the five features 5.5 lacks are catalogued in [[check-ue5-limitations]].
+UE 5.8 (`ue58-dev`) is the line that continues, and it is the one released as
+**CARLA 1.0**. UE 5.5 (`ue5-dev`) is an *earlier revision of the same line*, not
+a fork: `PythonAPI/carla/src/Sensor.cpp` is byte-identical between them. So the
+verdicts below apply to both engines unless a row says otherwise, and the five
+features 5.5 lacks are catalogued in [[check-ue5-limitations]].
 
-Read the version numbers here as naming the UE5 line rather than a release: when
-0.10.0 becomes 1.0 the measurements do not change, only the label.
+**On the version string.** Every measurement here was taken on a pre-release
+ue58 build, which reports `0.10.0` — that is the number `version` will print on
+those, and the number 5.5 reports today. Read `0.10.0` below as naming *the UE5
+line*: 1.0 renamed it, it did not change the behaviour underneath. Where a
+verdict is genuinely engine-specific the row says so.
 
 ### The four verdicts, and what each obliges you to do
 

@@ -55,8 +55,20 @@ def _world():
     return _fresh(c.get_world())
 
 
+def _is_ue5_line(ver: str) -> bool:
+    """True for the UE5 CARLA line: 0.10.x before the 1.0 release, 1.x after it.
+
+    The line was renamed, not changed, so anything gated on it must accept both
+    labels — a check for "0.10" alone goes silent against a 1.0 server.
+    """
+    if ver.startswith("0.10"):
+        return True
+    major = ver.split(".")[0]
+    return major.isdigit() and int(major) >= 1
+
+
 def _server_version() -> str:
-    """Server version string, e.g. "0.9.16" or "0.10.0". "" if unreachable."""
+    """Server version string, e.g. "0.9.16", "0.10.0" or "1.0.0". "" if unreachable."""
     try:
         c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                          int(os.environ.get("CARLA_PORT", 2000)))
@@ -173,14 +185,15 @@ def cmd_ros_topics(args):
     print("world topics (exist whenever the server runs with --ros2):")
     print("  rt/clock       [rosgraph_msgs/Clock]  every tick")
     # rt/carla/map comes from CarlaMapPublisher, which exists in 0.9.x only: the
-    # publisher was dropped in 0.10.0, so advertising the topic there sends
+    # publisher was dropped on the UE5 line, so advertising the topic there sends
     # people hunting for a topic that is never created.
     try:
         server = _server_version()
     except Exception:
         server = ""
-    if server.startswith("0.10"):
-        print("  rt/carla/map   NOT PUBLISHED on 0.10.0 — no CarlaMapPublisher in this build;")
+    if _is_ue5_line(server):
+        print(f"  rt/carla/map   NOT PUBLISHED on the UE5 line (server {server}) —")
+        print("                 no CarlaMapPublisher in this build;")
         print("                 read the OpenDrive with map.to_opendrive() over RPC instead")
     else:
         print("  rt/carla/map   [std_msgs/String]      OpenDRIVE, LATCHED, re-sent on map load")

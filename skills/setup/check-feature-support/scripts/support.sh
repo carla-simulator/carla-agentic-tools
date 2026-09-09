@@ -21,16 +21,18 @@ cmd_matrix() {
 LEGEND  [skill]  a vetted procedure exists in this collection — use it
         [works]  verified working, but no skill: you are on your own for the steps
         [untested] present in the build, never exercised here: DO NOT invent steps
-        [broken] verified broken or removed on 0.10.0 / ue58-dev
+        [broken] verified broken or removed on the UE5 line (ue58-dev)
 
 == Engine lines ==
-  UE 5.8 (ue58-dev) is the line that continues — CARLA 0.10.0 today, heading for
-  1.0. UE 5.5 (ue5-dev) is an earlier revision of the SAME line, not a fork: both
-  declare 0.10.0 and the Python API is nearly identical. So the ue58 skills are
-  the procedures for both, minus five gaps (no Autoware, FastDDS only, no
-  DLSS/rt_lens, no OFPA large-map mount, a few missing World/Actor methods).
+  UE 5.8 (ue58-dev) is the line that continues, and the one released as CARLA
+  1.0. UE 5.5 (ue5-dev) is an earlier revision of the SAME line, not a fork: the
+  Python API is nearly identical. So the ue58 skills are the procedures for both,
+  minus five gaps (no Autoware, FastDDS only, no DLSS/rt_lens, no OFPA large-map
+  mount, a few missing World/Actor methods).
   Full list: skills/ue5/check-ue5-limitations, `gaps.sh list`.
-  Read "0.10.0" below as "the UE5 line" — the number will change, the facts hold.
+  Read "0.10.0" below as "the UE5 line": it is what pre-1.0 ue58 builds report,
+  what every measurement here was taken on, and what 5.5 reports today. 1.0
+  renamed the line — the facts hold.
 
 == Covered by a skill ==
   [skill] build / package / run a server            build-carla-ue58, package-carla-ue58,
@@ -72,7 +74,7 @@ LEGEND  [skill]  a vetted procedure exists in this collection — use it
           half-working. Report it as to-be-done, and do not hand-roll the procedure from
           the walker skill's shape -- the two differ in exactly the step that is unsolved.
 
-== Broken or removed on 0.10.0 / ue58-dev ==
+== Broken or removed on the UE5 line (measured on 0.10.0 / ue58-dev) ==
   [broken] GBuffer capture                          CRASHES THE SERVER. See `support.sh broken`.
   [broken] map layers (load_map_layer/unload)       accepted, silently do nothing.
   [broken] Landmark.waypoint                        always None.
@@ -225,10 +227,15 @@ for bid, note in (("sensor.other.rss", "needs ENABLE_RSS=ON to function"),
 w = carla.World
 for name, note in (("apply_color_texture_to_object", "texture streaming: works, no skill"),
                    ("apply_textures_to_objects", "texture streaming: works, no skill"),
-                   ("set_publish_tf", "0.10.0 only: global rt/tf switch")):
+                   ("set_publish_tf", "UE5 line only: global rt/tf switch")):
     print(f"  {'present' if hasattr(w, name) else 'absent '} World.{name:30} {note}")
-if ver.startswith("0.10"):
-    print("  0.10.0: gbuffers CRASH the server, map layers are a no-op — `support.sh broken`")
+# The UE5 line reports 0.10.0 before the 1.0 release and 1.x after it; both are
+# the same line, so gate on the line, not on one label.
+if ver.startswith("0.10") or ver.split(".")[0].isdigit() and int(ver.split(".")[0]) >= 1:
+    print(f"  UE5 line (server {ver}): gbuffers CRASH the server, map layers are a no-op"
+          " — `support.sh broken`")
+    if not ver.startswith("0.10"):
+        print("  (those two were measured on 0.10.0; re-check them on this build)")
 PY
 }
 

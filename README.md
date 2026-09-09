@@ -7,9 +7,13 @@ from the Makefile.
 
 Nothing in a skill is client-specific — plain Markdown and POSIX shell. A
 standalone [MCP](https://modelcontextprotocol.io) server serves them to any MCP
-client, and ships **twice**: on npm as a self-contained Node package, and on
-PyPI as a Python one. Same skills, same answers, no wrapper between them —
+client, and comes in **two implementations**: a self-contained Node one and a
+Python one. Same skills, same answers, no wrapper between them —
 `tests/test_node_parity.py` runs both and diffs what they return.
+
+**No package registry is in the loop.** Both install straight from this
+repository — by git ref or release tarball — so a git tag *is* the release. On
+Claude Code it also installs as a plugin, in one line.
 
 This repo is independent of any CARLA checkout: it targets a **specific CARLA
 instance at runtime**, recorded on first use, so one install can drive any build.
@@ -19,23 +23,26 @@ instance at runtime**, recorded on first use, so one install can drive any build
 ```
 carla-agentic-tools/
 ├── pyproject.toml            # hatchling; maps skills/ into the wheel
-├── package.json              # the npm package; ships bin/ lib/ skills/
-├── bin/carla-agentic-tools.js # npx entry point
+├── package.json              # the Node package; ships bin/ lib/ skills/ (never published)
+├── .claude-plugin/           # plugin + marketplace manifests, for Claude Code
+├── bin/carla-agentic-tools.js # npx and plugin entry point
 ├── lib/                      # the Node server: server.js, skills.js, config.js
 │                             #   zero dependencies, Node >= 12
 ├── src/carla_agentic_tools/  # the Python server: server.py, config.py
 ├── test/node_smoke.js        # `npm test`
 ├── tests/                    # pytest, including the Node/Python parity checks
-├── upload.sh                 # publishes both, one confirmation each
 └── skills/
     ├── _common/env_common.sh # every env.sh loads the recorded paths through this
     ├── setup/                # get the pieces at all: download-carla, install-python-api,
     │                         #   install-scenario-runner, install-leaderboard
     ├── python-api/           # drives any running server (world-data, create-sensor, …)
     ├── ue4/                  # needs a UE4 checkout (build, package, run, import)
+    ├── ue5/                  # what UE 5.5 cannot do that 5.8 can
+    ├── ue58/                 # needs a UE 5.8 checkout (build, package, run, import, Autoware)
     ├── ros2/                 # native ROS 2 interface (publishers, msg types, RViz)
     ├── scenario-runner/      # CARLA's scenario engine (scenarios, OpenSCENARIO, routes)
-    └── leaderboard/          # the AD Leaderboard on top of it (agents, evaluation, scoring)
+    ├── leaderboard/          # the AD Leaderboard on top of it (agents, evaluation, scoring)
+    └── scenic/               # probabilistic scenarios (write and run .scenic)
 ```
 
 **Starting from nothing?** Three skills, in order: `download-carla` (fetches a
@@ -52,6 +59,28 @@ environment is present (`available: false` plus a reason when e.g.
 `CARLA_UE4_ROOT` is unset); unavailable skills are still listed, because creating
 that environment is often the task at hand.
 
+### Which CARLA each group is about
+
+The group names are engine branches, not release numbers, because one release
+number spans two of them:
+
+| Group | Branch | CARLA |
+|---|---|---|
+| `ue4` | `ue4-dev` | 0.9.x, through 0.9.16 |
+| `ue5` | `ue5-dev` | the UE5 line at UE 5.5 — an earlier revision, reports `0.10.0` |
+| `ue58` | `ue58-dev` | the same line at UE 5.8 — **CARLA 1.0** |
+
+`ue5-dev` and `ue58-dev` are one line, not parallel products, so the `ue58`
+skills are the procedures for 5.5 too, minus five gaps that
+[`check-ue5-limitations`](skills/ue5/check-ue5-limitations/SKILL.md) enumerates.
+Pre-1.0 builds of `ue58-dev` report `0.10.0`, and that is the version string most
+measurements in this repo were taken against — where a skill says `0.10.0`, read
+it as naming the UE5 line unless it is quoting a specific build.
+
+`python-api`, `scenario-runner`, `leaderboard`, `scenic` and `ros2` are not tied
+to an engine: they bind to a running server, a checkout of the companion repo, or
+CARLA's native ROS 2 sources.
+
 ## Two servers, one library
 
 The skills, and everything that decides which are usable, exist in both
@@ -59,13 +88,14 @@ languages. Which one you pick decides only what has to be on the machine:
 
 | | needs | runner |
 |---|---|---|
-| **npm** | Node >= 12, nothing else | `npx` |
-| **PyPI** | Python >= 3.10 | `uvx` |
+| **Node** | Node >= 12, nothing else | `npx` |
+| **Python** | Python >= 3.10, and it builds the MCP SDK on first run | `uvx` |
 
-The npm package carries the skills in its own tarball and has **no runtime
-dependencies** — no Python, no `uv`, no build step at first run. The Python
-package is the same thing for people whose tooling is already Python. Both are
-the same server at the same version, so pick whichever runtime you already have.
+The Node implementation carries the skills beside it and has **no runtime
+dependencies** — no Python, no `uv`, no build step at first run, which is why it
+is the one the commands below use. The Python one is the same server for people
+whose tooling is already Python; it resolves ~29 packages the first time. Both
+are the same version, so pick whichever runtime you already have.
 
 The skills themselves still shell out to `bash`, and the ones that drive the
 CARLA client need an interpreter with the `carla` wheel — that is the `PYTHON`
@@ -78,32 +108,39 @@ visible to the other.
 ## Install
 
 **There is usually nothing to install.** An MCP client starts a server by
-running a command, and both packages ship an on-demand runner, so the command
-you register *is* the install:
+running a command, and both runners fetch on demand, so the command you register
+*is* the install:
 
 ```bash
-npx -y @carla-simulator/agentic-tools   # npm
-uvx carla-agentic-tools                 # PyPI
+npx -y github:carla-simulator/carla-agentic-tools                                    # Node
+uvx --from git+https://github.com/carla-simulator/carla-agentic-tools \
+    carla-agentic-tools                                                              # Python
 ```
 
-Run either in a terminal to check it before wiring it into a client. A healthy
+Both clone this repository. If `git` is not on the machine, name the tarball
+GitHub generates for any branch or tag instead — same result, no git:
+
+```bash
+npx -y https://github.com/carla-simulator/carla-agentic-tools/archive/refs/heads/main.tar.gz
+```
+
+Run one of them in a terminal to check it before wiring it into a client. A healthy
 start is **silent** — it says nothing on either stream and blocks waiting for
 MCP traffic on stdin, so a process that just sits there is the success case, and
 Ctrl-C ends it. To see it actually answer, hand it a handshake:
 
 ```bash
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"c","version":"1"}}}' \
-  | npx -y @carla-simulator/agentic-tools
+  | npx -y github:carla-simulator/carla-agentic-tools
 ```
 
 which replies with the server name, the version you resolved, and the
 instructions the client will load.
 
-The first launch downloads the package and starts it. Later launches re-resolve
-the version, so a release published upstream arrives on its own — nobody
-reinstalls anything. That resolution is the runner's behaviour, not the client's:
-no agent is tracking versions on your behalf, and the client only ever re-runs
-the string it was given.
+The first launch fetches the repository and starts it; later launches reuse the
+runner's cache. That caching is the runner's behaviour, not the client's: no
+agent is tracking versions on your behalf, and the client only ever re-runs the
+string it was given.
 
 Diagnostics go to stderr and stdio is inherited, never piped, so stdout stays a
 clean MCP stream and the client talks to the server directly.
@@ -111,20 +148,26 @@ clean MCP stream and the client talks to the server directly.
 ### Following latest, or pinning
 
 Tracking latest is usually right for a skill library that is still growing, but
-the version is part of the command, so changing that behaviour is an args edit
-and needs no reinstall:
+the ref is part of the command, so changing that behaviour is an args edit and
+needs no reinstall:
 
-| args | effect |
+| spec | effect |
 |---|---|
-| `-y @carla-simulator/agentic-tools` | latest, re-resolved at each launch |
-| `-y @carla-simulator/agentic-tools@<version>` | frozen at one version |
-| `-y @carla-simulator/agentic-tools@latest` | forces past a stale `npx` cache |
+| `github:carla-simulator/carla-agentic-tools` | `main`, as it is now |
+| `github:carla-simulator/carla-agentic-tools#v0.6.0` | frozen at a tag — **the reproducible form** |
+| `github:carla-simulator/carla-agentic-tools#<sha>` | frozen at a commit |
+| `.../archive/refs/tags/v0.6.0.tar.gz` | the same tag, without needing `git` |
 
-For `uvx` the same three are `carla-agentic-tools`, `carla-agentic-tools@<version>`,
-and `uvx --refresh carla-agentic-tools`. The middle row is what to use when a
-result has to be reproducible later; the last is worth knowing because `npx` can
-serve a cached copy after a new release, and a user stuck on an old version is
-almost always looking at that.
+For `uvx`, append `@v0.6.0` to the `git+https://…` URL, and `uvx --refresh` to
+bypass its cache.
+
+**The caching is worth understanding**, because it is the one place a
+registry-free install behaves differently. `npx` caches by spec *string*, so a
+spec naming a moving branch can serve a clone made before your last push, and a
+user stuck on old skills is almost always looking at that. A tag is immutable,
+so a new tag is always a cache miss and always correct — which is why tags, not
+branches, are the supported form. To force a refetch of a branch spec, clear the
+runner's cache (`~/.npm/_npx`, or `uvx --refresh`).
 
 ### A durable install instead
 
@@ -133,15 +176,17 @@ Installing the package outright puts a `carla-agentic-tools` executable on
 resolution step:
 
 ```bash
-npm install -g @carla-simulator/agentic-tools   # npm
-pipx install carla-agentic-tools                # PyPI
+npm install -g github:carla-simulator/carla-agentic-tools#v0.6.0
+uv tool install git+https://github.com/carla-simulator/carla-agentic-tools@v0.6.0
 ```
 
 Register it as `command: "carla-agentic-tools"` with empty `args`. Upgrades
-become explicit (`npm update -g @carla-simulator/agentic-tools`, `pipx upgrade
-carla-agentic-tools`), which is the point: this is the shape for offline and
-air-gapped machines, for CI, and for anywhere a pinned version matters more than
-getting new skills as they land.
+become explicit — re-run the same command with a newer tag — which is the point:
+this is the shape for offline and air-gapped machines, for CI, and for anywhere
+a pinned version matters more than getting new skills as they land. A machine
+with neither runner can clone the repo and register
+`node /path/to/carla-agentic-tools/bin/carla-agentic-tools.js`, which fetches
+nothing at all.
 
 ## Registering with an MCP client
 
@@ -156,15 +201,15 @@ Windsurf (`~/.codeium/windsurf/mcp_config.json`), Gemini CLI
   "mcpServers": {
     "carla": {
       "command": "npx",
-      "args": ["-y", "@carla-simulator/agentic-tools"]
+      "args": ["-y", "github:carla-simulator/carla-agentic-tools"]
     }
   }
 }
 ```
 
-Swap `command`/`args` for `uvx` + `["carla-agentic-tools"]` to run the Python
-package instead. **No paths go here** — you would have to know them before the
-skills that create them have run.
+Swap `command`/`args` for `uvx` + `["--from", "git+https://github.com/carla-simulator/carla-agentic-tools", "carla-agentic-tools"]`
+to run the Python implementation instead. **No paths go here** — you would have
+to know them before the skills that create them have run.
 
 Two clients want a different shape for the same server:
 
@@ -176,16 +221,16 @@ Two clients want a different shape for the same server:
   ```toml
   [mcp_servers.carla]
   command = "npx"
-  args = ["-y", "@carla-simulator/agentic-tools"]
+  args = ["-y", "github:carla-simulator/carla-agentic-tools"]
   ```
 
 Clients with a CLI will write that entry for you:
 
 ```bash
-claude mcp add carla -s user -- npx -y @carla-simulator/agentic-tools
-codex mcp add carla -- npx -y @carla-simulator/agentic-tools
-gemini mcp add -s user carla npx -- -y @carla-simulator/agentic-tools
-code --add-mcp '{"name":"carla","command":"npx","args":["-y","@carla-simulator/agentic-tools"]}'
+claude mcp add carla -s user -- npx -y github:carla-simulator/carla-agentic-tools
+codex mcp add carla -- npx -y github:carla-simulator/carla-agentic-tools
+gemini mcp add -s user carla npx -- -y github:carla-simulator/carla-agentic-tools
+code --add-mcp '{"name":"carla","command":"npx","args":["-y","github:carla-simulator/carla-agentic-tools"]}'
 ```
 
 Each of these only records the entry — nothing is fetched until the client first
@@ -193,6 +238,30 @@ starts the server. Note where the `--` falls: for `claude` and `codex` it
 separates the whole server command from the client's own flags, while `gemini`
 takes the command as a positional and needs the `--` after it so npx's `-y` is
 not read as a flag for `gemini` itself.
+
+### Claude Code: one line, as a plugin
+
+This repository is also its own plugin marketplace, which is the shortest path
+on Claude Code — no runner to choose, no registration, no paths:
+
+```
+/plugin marketplace add carla-simulator/carla-agentic-tools
+/plugin install carla@carla-agentic-tools
+```
+
+The plugin ships the **same MCP server** and starts it from its own checkout
+(`node ${CLAUDE_PLUGIN_ROOT}/bin/carla-agentic-tools.js`), so the tools, the
+skills and the answers are identical to every other client's — only the delivery
+differs. It needs Node >= 12 and nothing else, fetches nothing at launch, and
+updates with `claude plugin update carla`. The tools appear under the plugin's
+prefix (`mcp__plugin_carla_carla__list_skills`), which matters only if you write
+permission rules for them.
+
+To try a working tree without installing anything:
+
+```bash
+claude --plugin-dir /path/to/carla-agentic-tools
+```
 
 Five tools, whatever the client: `list_skills` (optionally `group`-filtered),
 `read_skill(name)`, `check_prerequisites(name)`, `get_config()`,
@@ -248,11 +317,14 @@ Work from a checkout when you are *writing* skills:
 pip install -e .                       # the Python server from source
 pytest -q tests/                       # structural + MCP + Node/Python parity
 node test/node_smoke.js                # the Node server (also `npm test`)
-CARLA_SKILLS_DIR=$PWD/skills uvx carla-agentic-tools   # a published server, live skills
+node bin/carla-agentic-tools.js        # the Node server straight from the tree
+claude --plugin-dir $PWD               # Claude Code on this tree, nothing installed
 ```
 
 `CARLA_SKILLS_DIR` points either server at a working tree, so you can edit a
-`SKILL.md` and re-run without reinstalling.
+`SKILL.md` and re-run without reinstalling — useful when the server itself was
+fetched (`CARLA_SKILLS_DIR=$PWD/skills npx -y github:carla-simulator/carla-agentic-tools`)
+rather than run from the checkout.
 
 Change how a skill is *selected* — the gating, the config keys, the detection
 markers — and you are editing two implementations. `tests/test_node_parity.py`
@@ -261,15 +333,36 @@ side only fails there rather than reaching a user.
 
 ## Releasing
 
+A release is a **git tag**. Nothing is published, and there is no registry
+account to hold:
+
 ```bash
-bash upload.sh --check     # preflight and build, publish nothing
-bash upload.sh             # then confirm PyPI and npm separately
+pytest -q tests/ && node test/node_smoke.js    # both suites
+claude plugin validate . --strict              # the plugin manifests
+git tag v0.6.0 && git push origin v0.6.0       # what the install specs pin
+claude plugin tag . --push                     # carla--v0.6.0, for the plugin
 ```
 
-The version lives in `pyproject.toml`, `src/carla_agentic_tools/__init__.py` and
-`package.json`; `tests/test_version.py` fails on drift and `upload.sh` refuses to
-run. Neither index replaces a published version, and npm only allows unpublish
-within 72 hours, so each publish asks for a literal `yes`.
+**Two tag names, one release.** `v<version>` is what the `npx`/`uvx` specs above
+name. Claude Code derives a plugin's version from a `{name}--v{version}` tag
+instead — it records the commit SHA and a tag-derived semver for a git-installed
+plugin — so `claude plugin tag` creates `carla--v0.6.0`, after checking that
+`plugin.json` and the marketplace entry agree. It refuses on a dirty tree, which
+is the behaviour you want from a release step.
+
+The version lives in four files — `pyproject.toml`,
+`src/carla_agentic_tools/__init__.py`, `package.json` and
+`.claude-plugin/plugin.json` — and `tests/test_version.py` fails on drift
+between any of them.
+
+`package.json` carries `"private": true`, so a stray `npm publish` is refused
+instead of claiming the name. Nothing here forecloses adding npm or PyPI later;
+every spec above keeps working if you do.
+
+Two things to know about tagging as a release mechanism: the plugin manifests
+must be on the **default branch** for `/plugin marketplace add` to find them, and
+the runners cache branch specs but never tag specs — so push the branch and the
+tag together, and point users at tags.
 
 ## Targeting a CARLA instance
 

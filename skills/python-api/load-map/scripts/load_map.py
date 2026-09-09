@@ -105,6 +105,18 @@ def _parse_layers(spec: str) -> "carla.MapLayer":
     return layers
 
 
+def _is_ue5_line(ver: str) -> bool:
+    """True for the UE5 CARLA line: 0.10.x before the 1.0 release, 1.x after it.
+
+    The line was renamed, not changed, so anything gated on it must accept both
+    labels — a check for "0.10" alone goes silent against a 1.0 server.
+    """
+    if ver.startswith("0.10"):
+        return True
+    major = ver.split(".")[0]
+    return major.isdigit() and int(major) >= 1
+
+
 def _report(world: "carla.World", note: str = "") -> None:
     """Print the post-operation map + settings so the caller can verify."""
     s = world.get_settings()
@@ -197,12 +209,12 @@ def cmd_layer(args: argparse.Namespace) -> None:
         action = f"unloaded layers {args.unload}"
     _report(world, f"({action})")
     print("  note: layer ops are no-ops on fully-baked (non-'_Opt') maps")
-    # On 0.10.0 they are no-ops on EVERY map: the UE5 conversion flattened the
-    # per-layer sublevels into the persistent level, so the mask matches nothing
-    # in World->GetStreamingLevels(). The call still returns success.
+    # On the UE5 line they are no-ops on EVERY map: the UE5 conversion flattened
+    # the per-layer sublevels into the persistent level, so the mask matches
+    # nothing in World->GetStreamingLevels(). The call still returns success.
     try:
-        if client.get_server_version().startswith("0.10"):
-            print("  WARNING 0.10.0: layer ops do nothing on ANY map — the layer "
+        if _is_ue5_line(client.get_server_version()):
+            print("  WARNING UE5 line: layer ops do nothing on ANY map — the layer "
                   "sublevels were baked into the persistent level.")
             print("          Hide geometry with enable_environment_objects "
                   "(toggle-env-objects) instead.")

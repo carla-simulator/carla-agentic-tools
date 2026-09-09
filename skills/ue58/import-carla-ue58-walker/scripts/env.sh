@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Self-contained environment for the import-carla-ue58-prop skill (CARLA on UE 5.8).
+# Self-contained environment for the import-carla-ue58-walker skill (CARLA on UE 5.8).
 # Source before the skill's other scripts:  source scripts/env.sh
 #
 # UE 5.8 CARLA is built with CMake, not the UE4 Makefile: there is no `Makefile`

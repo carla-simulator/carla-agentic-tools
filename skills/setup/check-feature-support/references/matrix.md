@@ -1,7 +1,9 @@
 # Evidence behind each verdict
 
-Stamped to `ue58-dev` HEAD `718efd7cc` (engine 5.8.0, CARLA 0.10.0) and the
-0.9.16 UE4 tree at `~/carla`. **Evidence** is either *measured* (executed against
+Stamped to `ue58-dev` HEAD `718efd7cc` (engine 5.8.0, reporting CARLA 0.10.0 —
+the pre-release label for the line now shipping as **CARLA 1.0**) and the 0.9.16
+UE4 tree at `~/carla`. Read `0.10.0` throughout as naming the UE5 line, not one
+release; where a fact is specific to a build, the row says which. **Evidence** is either *measured* (executed against
 a live server or the build) or *read* (source or file layout). Each row records
 how to re-check it after an upgrade, and what promoting it would take.
 

@@ -110,7 +110,9 @@ The filename scheme is **not** stable across the CARLA line. Verified live:
 ```
 
 So the skill reads the **GitHub release body** (the authority for the *filename*,
-always current). Constructing `CARLA_<version>.tar.gz` would 404 on the 0.10 (UE5)
+always current), which is also why a newly published version — 1.0 included —
+needs no change here: `list` and `resolve` see it as soon as GitHub does.
+Constructing `CARLA_<version>.tar.gz` would 404 on the 0.10 (UE5)
 line. GitHub releases themselves carry **no attached assets** — the links in the
 body are the only source.
 
@@ -205,7 +207,7 @@ Solution: `list` shows the tags. For unreleased code use `git --ref <branch>`.
 
 **Problem: extraction succeeded but no `CarlaUE4.sh` was found**
 Cause: an interrupted extraction, or a release whose launcher has another name
-(the 0.10/UE5 line uses `CarlaUnreal.sh`).
+(the UE5 line — 0.10 and 1.0 — uses `CarlaUnreal.sh`).
 Solution: the skill searches for both and warns when neither appears; check the
 printed path, and re-run with `--keep-archive` to retry extraction without
 re-downloading.

@@ -5,10 +5,10 @@
 #   gaps.sh check           test THIS tree for each gap marker (needs CARLA_UE5_ROOT)
 #   gaps.sh diff            measured diff against a ue58 tree (needs CARLA_UE58_ROOT too)
 #
-# 5.5 and 5.8 are the same CARLA line, not parallel products: both declare
-# 0.10.0, the Python API is nearly identical, and 5.8 is the later revision. So
-# the ue58 skills ARE the procedures for 5.5 as well — except for the features
-# below, which do not exist there at all.
+# 5.5 and 5.8 are the same CARLA line, not parallel products: the Python API is
+# nearly identical, and 5.8 is the later revision — the one released as CARLA
+# 1.0. So the ue58 skills ARE the procedures for 5.5 as well — except for the
+# features below, which do not exist there at all.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
@@ -62,8 +62,9 @@ Identical on both, so every finding transfers unchanged:
    `#if 0 // @CARLAUE5` wheel block that stops GenerateNewVehicleBlueprint
    producing a drivable car; and the Import.sh CARLA_BUILD_TOOLS_FOLDER defect.
 
-Version note: both branches declare CARLA 0.10.0 today. 5.8 is the line that
-continues (headed for 1.0), so treat 5.5 as an earlier point release, not a fork.
+Version note: 5.8 is the line that continues, released as CARLA 1.0; 5.5 still
+declares 0.10.0, as did every ue58 build before that release. Treat 5.5 as an
+earlier point release of the same line, not a fork.
 EOF
 }
 
