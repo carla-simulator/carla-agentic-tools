@@ -12,6 +12,11 @@ metadata:
 
 # Create a Scenic scenario from a description
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Scenic describes a **distribution over scenes**, not one scene. So a good
 scenario is not a script of positions — it is a set of constraints loose enough
 to sample and tight enough to be the situation asked for.

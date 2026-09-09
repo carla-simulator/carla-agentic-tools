@@ -11,6 +11,11 @@ metadata:
 
 # Package an agent for submission
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 The leaderboard evaluates a **docker image**, not a repository. `make_docker.sh`
 assembles one from four trees plus your code:
 

@@ -11,6 +11,11 @@ metadata:
 
 # Run a leaderboard evaluation
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 `leaderboard_evaluator.py` drives your agent through each route, records
 infractions, computes a driving score and writes a JSON checkpoint it can resume
 from. It is a long-running batch job: `routes_devtest.xml` is 2 routes,

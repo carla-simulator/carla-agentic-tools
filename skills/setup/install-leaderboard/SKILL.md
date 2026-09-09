@@ -11,6 +11,11 @@ metadata:
 
 # Install the CARLA Leaderboard
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 The Leaderboard is an evaluation harness layered on ScenarioRunner: it supplies
 routes, a fixed sensor budget, infraction criteria and a scoring formula, and it
 imports `srunner` for the scenarios themselves. So a working install is **four
@@ -31,7 +36,7 @@ Progress:
 - [ ] Step 2: Get the CARLA build that version needs
 - [ ] Step 3: Clone leaderboard + the matching scenario_runner branch
 - [ ] Step 4: Install both requirement sets
-- [ ] Step 5: Export the four roots and verify (bash scripts/check_env.sh)
+- [ ] Step 5: Record the roots with `set_config`, then verify (bash scripts/check_env.sh)
 ```
 
 ### Step 1: Which version
@@ -126,6 +131,20 @@ Order is the official one from `scripts/Dockerfile.master`. Two traps:
 
 `scripts/env.sh` builds all of this and prints the detected version, so
 `source scripts/env.sh` is the shortcut.
+
+### Recording the path
+
+An `export` lasts until the shell exits. Persist `LEADERBOARD_ROOT` and `SCENARIO_RUNNER_ROOT` instead, so the
+next session — and `list_skills` — still knows where this went:
+
+```
+set_config({"LEADERBOARD_ROOT": "<the leaderboard path>",
+            "SCENARIO_RUNNER_ROOT": "<the scenario_runner path>"})
+```
+
+Without it the group this just enabled keeps reporting `available: false`,
+and the next skill re-detects from scratch. `CARLA_ROOT` is the only CARLA
+path to record: `set_config` derives the engine-specific variable itself.
 
 ## Examples
 

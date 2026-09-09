@@ -12,6 +12,11 @@ metadata:
 
 # Import a map into CARLA
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Turn a RoadRunner export — an `.fbx` mesh plus its `.xodr` OpenDRIVE — into a
 CARLA map you can load and drive on. **The map's directory comes from the
 request** — `Import/Maps`, `~/dev/Maps/MyTown`, a mounted share, anywhere. Ask

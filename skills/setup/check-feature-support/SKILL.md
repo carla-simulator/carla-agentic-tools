@@ -11,6 +11,11 @@ metadata:
 
 # Is this feature usable, and is there a procedure for it?
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 The failure this prevents is specific: **an agent asked to use an uncovered CARLA
 feature reconstructs a plausible procedure from UE4-era documentation, and it is
 wrong.** Every row in this skill's `[broken]` list used to be a working, well

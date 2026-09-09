@@ -2,6 +2,12 @@
 # Prerequisite checks for read-sensor. Read-only, no sudo. Fast probe so
 # the MCP check_prerequisites(name) tool never hangs.
 # Exits non-zero ONLY on hard blockers: no `carla` module, or no reachable server.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091

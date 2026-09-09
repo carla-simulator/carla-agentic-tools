@@ -11,6 +11,11 @@ metadata:
 
 # Control the Traffic Manager
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Shape how **autopilot** vehicles drive — globally (all cars on a TM port) or
 per-vehicle. This is the counterpart to [`control-vehicle`](../control-vehicle/SKILL.md):
 that skill drives one car manually; this one tunes the autonomous traffic. It

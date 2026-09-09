@@ -11,6 +11,11 @@ metadata:
 
 # Add a ROS 2 message type
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 CARLA serialises hand-written C++ PODs straight into CDR buffers with Fast-CDR.
 **There is no IDL compiler in the build**, so a new type is a five-file manual
 change. Skipping any one of them fails in a different way — silently on the wire,

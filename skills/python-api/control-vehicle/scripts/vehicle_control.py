@@ -32,15 +32,28 @@ from __future__ import annotations
 
 import argparse
 import os
-import time
 
 import carla  # provided by the active interpreter; check_env.sh verifies this
+
+
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
 
 
 def _client() -> carla.Client:
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client
 
 
@@ -82,8 +95,50 @@ def _flags(spec, enum):
     return out
 
 
+# --- waiting on the simulation, not on the wall clock ----------------------
+# These commands are observers: they never own the world's clock, so they
+# advance by waiting for whoever does (the server itself in async, the holding
+# client in sync). A fixed time.sleep() is wrong for both -- it measures wall
+# time while the thing being waited for is measured in frames, so it overruns
+# a fast server and cuts a slow one short, and in a synchronous world with a
+# stalled ticker it "succeeds" having observed nothing at all.
+
+def _for_seconds(world, seconds):
+    """Yield one snapshot per frame until `seconds` of SIMULATED time pass.
+
+    The budget is read off the world clock (`elapsed_seconds`), not summed from
+    per-frame deltas. Summing deltas counts *observed* frames, so a consumer
+    slower than the server -- a client encoding PNGs at 4 Hz against a 30 Hz
+    server, say -- accumulates 0.03 s per poll and takes minutes to "reach"
+    20 seconds. Reading the clock is correct whether or not frames are missed.
+    """
+    start = None
+    while True:
+        snapshot = world.wait_for_tick()
+        now = snapshot.timestamp.elapsed_seconds
+        if start is None:
+            start = now
+        elif now - start >= seconds:
+            return
+        yield snapshot
+
+
+def _until(world, predicate, seconds):
+    """Advance frames until predicate() is true; returns whether it became true.
+
+    The budget is simulated seconds, so a stalled clock ends this by timing out
+    in wait_for_tick() rather than by silently burning the budget.
+    """
+    if predicate():
+        return True
+    for _ in _for_seconds(world, seconds):
+        if predicate():
+            return True
+    return False
+
+
 def cmd_control(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     v.set_autopilot(False)   # manual and TM control are mutually exclusive
     ctrl = carla.VehicleControl(throttle=args.throttle, steer=args.steer, brake=args.brake,
@@ -92,13 +147,14 @@ def cmd_control(args):
     print(f"id={v.id}: throttle={args.throttle} steer={args.steer} brake={args.brake} "
           f"reverse={args.reverse} hand_brake={args.hand_brake}")
     if args.hold > 0:
-        time.sleep(args.hold)
+        for _ in _for_seconds(world, args.hold):
+            pass
         v.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0))
         print(f"  held {args.hold}s, then braked to a stop")
 
 
 def cmd_ackermann(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     v.set_autopilot(False)
     v.apply_ackermann_control(carla.VehicleAckermannControl(
@@ -109,7 +165,7 @@ def cmd_ackermann(args):
 
 
 def cmd_stop(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     v.set_autopilot(False)
     v.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
@@ -117,7 +173,7 @@ def cmd_stop(args):
 
 
 def cmd_constant_velocity(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     v.set_autopilot(False)
     if args.off:
@@ -131,7 +187,7 @@ def cmd_constant_velocity(args):
 
 
 def cmd_lights(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     state = int(v.get_light_state())
     if args.on:
@@ -161,7 +217,7 @@ def _doors(spec):
 
 
 def cmd_door(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     if not args.open and not args.close:
         raise SystemExit("door needs --open and/or --close")
@@ -176,7 +232,7 @@ def cmd_door(args):
 
 
 def cmd_physics(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     pc = v.get_physics_control()
     if args.show or (args.mass is None and args.drag is None and args.max_rpm is None):
@@ -215,7 +271,7 @@ def cmd_physics(args):
 
 
 def cmd_telemetry(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     v.show_debug_telemetry(not args.off)
     print(f"id={v.id}: debug telemetry {'off' if args.off else 'on'} (visible on a rendered server)")
@@ -228,7 +284,7 @@ def cmd_ros_info(args):
     them, and ActorDispatcher only calls it for a vehicle whose role_name is
     exactly "hero" — so a non-hero vehicle has no ROS control path at all.
     """
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     v = _resolve(world, args)
     role = v.attributes.get("role_name", "")
     ros_name = v.attributes.get("ros_name", "") or f"actor{v.id}"

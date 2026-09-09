@@ -12,6 +12,11 @@ metadata:
 
 # See the ROS 2 side of a CARLA server
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Everything else in this collection acts through the RPC API. This skill is the
 **consumer** side: it proves what is really on the DDS wire and draws it. It
 never launches a simulator, and it needs no ROS 2 on the host — the `ros2` CLI

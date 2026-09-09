@@ -11,6 +11,11 @@ metadata:
 
 # Debug the pedestrian navmesh
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 CARLA does not expose navmesh geometry, but every location from
 `get_random_location_from_navigation()` sits on the walkable mesh. Sampling many
 of them **validates** the navmesh loaded and **visualises** its coverage — the

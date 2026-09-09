@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Prerequisite checks for download-carla. Read-only, no sudo, downloads nothing.
 # Exits non-zero only on hard blockers (no way to fetch, or no space to fetch into).
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
@@ -25,10 +31,21 @@ if command -v curl >/dev/null; then
   curl -fsS --max-time 15 -o /dev/null "https://api.github.com/repos/carla-simulator/carla/releases?per_page=1" \
     && ok "GitHub API reachable (release list + download URLs)" \
     || bad "cannot reach api.github.com — no way to resolve downloads"
-  # The CDN is a different host from the API; being able to reach one says
-  # nothing about the other, and this is where the multi-GB bytes come from.
-  curl -fsSI --max-time 15 -o /dev/null "https://carla-releases.b-cdn.net/Linux/Dev/CARLA_Latest.tar.gz" \
-    && ok "carla-releases CDN reachable" || warn "CDN unreachable — downloads will fail"
+  # The mirrors are different hosts from the API; reaching one says nothing about
+  # the others, and this is where the multi-GB bytes come from. Two are probed
+  # because they hold different sets: downloads.carlasim.com serves 0.9.16 and the
+  # nightly, the Backblaze bucket is the only host still serving the older
+  # releases and the 0.10 (UE5) line. The retired carla-releases.b-cdn.net zone,
+  # which the older release bodies still link to, 403s everything — the script
+  # remaps around it, so it is deliberately not probed.
+  mirrors_up=0
+  curl -fsSI --max-time 15 -o /dev/null "https://downloads.carlasim.com/Linux/Dev/CARLA_Latest.tar.gz" \
+    && { ok "downloads.carlasim.com reachable (0.9.16 + nightly)"; mirrors_up=1; } \
+    || warn "downloads.carlasim.com unreachable"
+  curl -fsSI --max-time 15 -o /dev/null "https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/Dev/CARLA_Latest.tar.gz" \
+    && { ok "carla-releases Backblaze mirror reachable (all versions)"; mirrors_up=1; } \
+    || warn "Backblaze mirror unreachable"
+  [ "${mirrors_up}" -eq 1 ] || bad "no download mirror reachable — downloads will fail"
 else
   warn "curl missing — cannot probe connectivity here"
 fi

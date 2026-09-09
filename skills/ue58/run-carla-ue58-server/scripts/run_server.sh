@@ -11,6 +11,8 @@
 # Env: PORT=2000  TM_PORT=8000  ROS2=1  RMW=fastdds|cyclonedds|zenoh  ROS_DOMAIN_ID=
 #      OFFSCREEN=1 (default for game/package)  NULLRHI=1  QUALITY=Low|Epic
 #      WINDOW=1 (render to a window instead)   DETACH=1 (background it)
+#      TRACE=1  (keep UnrealTrace on; WINDOW=1 passes -notrace without it)
+#      RES=1920x1080  FULLSCREEN=1   (both WINDOW=1 only, both opt-in)
 #      EXTRA="-any -more -flags"
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +55,35 @@ preflight_ports() {
 common_args() {
   ARGS=(-carla-rpc-port="${PORT}" -carla-streaming-port="$(( PORT + 1 ))")
   if [ "${WINDOW:-0}" = "1" ]; then
-    :
+    # Windowed mode gets -notrace by default. Measured on ue58-dev: a windowed
+    # launch started right after a headless one crashed on startup with
+    #   SIGSEGV at 0x00007dcfcdff1a10
+    #   UE::Trace::Private::Writer_WorkerThread (Trace/Writer.cpp:1082)
+    #   -> TraceAuxiliaryOnMessageCallback -> FLLMTracker::TrackAllocation
+    # i.e. inside UnrealTrace's own writer thread, nothing to do with the
+    # window or the RHI, with a stale UnrealTraceServer daemon still resident
+    # from the previous run. -notrace stops the engine attaching to that daemon
+    # and the same command then came up clean. Nobody profiling a demo needs
+    # the trace stream; TRACE=1 puts it back.
+    if [ "${TRACE:-0}" != "1" ]; then
+      ARGS+=(-notrace)
+    fi
+    # RES=WxH sizes the window; FULLSCREEN=1 asks for exclusive fullscreen.
+    # Neither is default: a plain WINDOW=1 keeps whatever size the engine
+    # picks, and exclusive fullscreen is a poor default because an overlay
+    # window (a terminal being recorded on top of the sim, say) does not
+    # reliably stay above it.
+    if [ -n "${RES:-}" ]; then
+      case "${RES}" in
+        *[xX]*) ARGS+=(-ResX="${RES%%[xX]*}" -ResY="${RES##*[xX]}") ;;
+        *) echo "[run] WARNING RES='${RES}' is not WxH — ignored" ;;
+      esac
+    fi
+    if [ "${FULLSCREEN:-0}" = "1" ]; then
+      ARGS+=(-fullscreen)
+    else
+      ARGS+=(-windowed)
+    fi
   elif [ "${NULLRHI:-0}" = "1" ]; then
     # No RHI at all. Fastest start, but do NOT spawn a camera on a -nullrhi
     # server: there is no render target, ImageUtil::ReadImageDataBegin

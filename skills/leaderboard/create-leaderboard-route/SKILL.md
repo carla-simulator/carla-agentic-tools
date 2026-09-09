@@ -11,6 +11,11 @@ metadata:
 
 # Create a leaderboard route
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 A route is waypoints plus scenarios pinned to trigger points, in one XML file
 ([[run-route-scenario]] documents the format). Writing the coordinates by hand does
 not work in practice — Town12 is 10 km across and a trigger point a metre into the

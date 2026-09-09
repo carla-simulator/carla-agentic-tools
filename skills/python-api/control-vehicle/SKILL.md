@@ -11,6 +11,11 @@ metadata:
 
 # Control a vehicle directly
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Drive one vehicle yourself: control input, Ackermann speed target, lights, doors,
 physics. It targets **the ego** (`role_name = hero`) by default, or any vehicle by
 `--id` / `--role` / `--filter`. This is **manual** control — `control` and

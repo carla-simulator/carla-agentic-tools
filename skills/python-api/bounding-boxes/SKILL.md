@@ -12,6 +12,11 @@ metadata:
 
 # Bounding boxes
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Three things: read actors' 3D boxes, draw them in the world, or **project** them
 into a camera image as 2D boxes with a JSON sidecar — the standard CARLA
 dataset-annotation pipeline (`client_bounding_boxes.py`).

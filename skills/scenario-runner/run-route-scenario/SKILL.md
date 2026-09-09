@@ -11,6 +11,11 @@ metadata:
 
 # Run a route
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 A **route** is a list of waypoints plus a set of scenarios pinned to trigger
 points along it. `RouteScenario` builds one behaviour tree containing every
 scenario on the route, plus background traffic, and evaluates route-level criteria

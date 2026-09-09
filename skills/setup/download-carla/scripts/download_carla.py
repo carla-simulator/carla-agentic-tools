@@ -6,7 +6,8 @@ Commands:
     resolve [--version 0.9.16]    print the real download URL(s) + sizes, download nothing
     release [--version latest] [--with-maps] [--dest DIR] [--keep-archive]
                                   official package: download, verify, extract
-    nightly [--dest DIR]          the rolling Dev build (no version tag)
+    nightly [--ue5] [--dest DIR]  the rolling Dev build (no version tag); --ue5 for
+                                  the UE5 line's nightly (Linux only, ~15.7 GB)
     git [--ref ue4-dev] [--dest DIR]
                                   shallow source checkout (then build-carla-ue4)
     docker [--version 0.9.16]     docker pull carlasim/carla:<version>
@@ -19,7 +20,12 @@ Why URLs are resolved from the GitHub API rather than constructed: the filename
 scheme is NOT stable across the CARLA line. 0.9.16 publishes
 `Linux/CARLA_0.9.16.tar.gz`, while 0.10.0 publishes
 `Linux/Carla-0.10.0-Linux-Shipping.tar.gz` — a constructed URL 404s on one of
-them. The release body is the authority; the CDN pattern is only a fallback.
+them. The release body is the authority; a constructed path is only a fallback.
+
+The host in those links is NOT authoritative, though: the bodies up to 0.9.15 (and
+all the tiny.carla.org shortlinks) point at a BunnyCDN zone that now 403s. Every
+resolved URL is therefore probed, and remapped by path onto a live mirror when the
+linked host does not serve it — see resolve_url.
 
 Add --dry-run to any downloading command to see exactly what would run.
 """
@@ -38,9 +44,20 @@ import zipfile
 from pathlib import Path
 
 API = "https://api.github.com/repos/carla-simulator/carla/releases"
-CDN = "https://carla-releases.b-cdn.net"
-NIGHTLY = f"{CDN}/Linux/Dev/CARLA_Latest.tar.gz"
+# Mirrors sharing the same <Platform>/<file> layout, in preference order.
+# downloads.carlasim.com is what the current release bodies link to; the Backblaze
+# bucket is the origin behind it and the only host still serving the pre-0.9.16
+# files and the 0.10 (UE5) line.
+MIRRORS = ("https://downloads.carlasim.com",
+           "https://carla-releases.s3.us-east-005.backblazeb2.com")
 PLATFORM = "Windows" if sys.platform.startswith("win") else "Linux"
+NIGHTLY_PATH = ("Windows/Dev/CARLA_Latest.zip" if PLATFORM == "Windows"
+                else "Linux/Dev/CARLA_Latest.tar.gz")
+NIGHTLY = f"{MIRRORS[0]}/{NIGHTLY_PATH}"
+# The UE5 line's rolling build. Linux only — no Windows artifact is published, and
+# it ships no separate AdditionalMaps (the UE5 package bundles its content).
+NIGHTLY_UE5_PATH = "Linux/Dev/CARLA_UE5_Latest.tar.gz"
+NIGHTLY_UE5 = f"{MIRRORS[0]}/{NIGHTLY_UE5_PATH}"
 
 
 def _get_json(url: str):
@@ -59,39 +76,71 @@ def _links(body: str) -> list[tuple[str, str]]:
     return re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", body or "")
 
 
-def head(url: str) -> tuple[str, int]:
-    """Follow redirects; return (final_url, size_bytes). size 0 when unknown.
+def probe(url: str) -> tuple[str, int, int]:
+    """Follow redirects; return (final_url, size_bytes, http_status).
 
     curl first: the tiny.carla.org shortener answers HEAD with a 308, which
     urllib's HEAD redirect handling does not follow (verified — it raises
     HTTPError 308). The fallback is a 1-byte ranged GET, which follows the
     redirect and reports the true length in Content-Range without pulling the
     multi-GB body.
+
+    The status matters as much as the size: the retired BunnyCDN zone answers
+    every HEAD with a cheerful 403 and no length, so "got a response" is not
+    "got a file".
     """
     if shutil.which("curl"):
         r = subprocess.run(["curl", "-sIL", "--max-time", "30", url],
                            capture_output=True, text=True)
-        final, size = url, 0
+        final, size, status = url, 0, 0
         for line in r.stdout.splitlines():
             low = line.lower()
-            if low.startswith("location:"):
+            if low.startswith("http/"):
+                bits = line.split()
+                status = int(bits[1]) if len(bits) > 1 and bits[1].isdigit() else 0
+                size = 0  # a new hop: the previous response's length is not ours
+            elif low.startswith("location:"):
                 final = line.split(":", 1)[1].strip()
             elif low.startswith("content-length:"):
                 try:
                     size = int(line.split(":", 1)[1].strip())
                 except ValueError:
                     pass
-        if size:
-            return final, size
+        if status:
+            return final, size, status
     req = urllib.request.Request(url, headers={"User-Agent": "carla-agentic-tools",
                                                "Range": "bytes=0-0"})
     try:
         with urllib.request.urlopen(req, timeout=30) as fh:
             cr = fh.headers.get("Content-Range", "")
             total = int(cr.rsplit("/", 1)[1]) if "/" in cr else int(fh.headers.get("Content-Length") or 0)
-            return fh.geturl(), total
+            return fh.geturl(), total, getattr(fh, "status", 200)
     except Exception:
-        return url, 0
+        return url, 0, 0
+
+
+def resolve_url(url: str) -> tuple[str, int]:
+    """(usable_url, size) — remapped onto a live mirror when the link is dead.
+
+    Every release body before 0.9.16, and every tiny.carla.org shortlink, still
+    points at `carla-releases.b-cdn.net`, a BunnyCDN pull zone that has answered
+    403 for every object since 2026-09. The files themselves are unchanged on the
+    mirrors under the identical path, so the path is reused verbatim.
+    """
+    final, size, status = probe(url)
+    if status == 200 and size:
+        return final, size
+    path = re.sub(r"^https?://[^/]+/", "", final)
+    for base in MIRRORS:
+        cand = f"{base}/{path}"
+        if cand == final:
+            continue
+        f2, s2, st2 = probe(cand)
+        if st2 == 200 and s2:
+            print(f"  note: {final} -> HTTP {status or 'no answer'}; using mirror {base}")
+            return f2, s2
+    raise SystemExit(f"no live mirror for {path!r} (linked as {url}, HTTP {status or 'no answer'});\n"
+                     f"  tried: {', '.join(MIRRORS)}")
 
 
 def pick_release(version: str) -> dict:
@@ -120,7 +169,7 @@ def asset_urls(rel: dict) -> dict[str, str]:
             out.setdefault("package", url)
     if "package" not in out:
         # Fallback to the historical pattern; correct for the 0.9.x line only.
-        out["package"] = f"{CDN}/{PLATFORM}/CARLA_{rel['tag_name']}{want_ext}"
+        out["package"] = f"{MIRRORS[0]}/{PLATFORM}/CARLA_{rel['tag_name']}{want_ext}"
     return out
 
 
@@ -137,7 +186,7 @@ def free_bytes(path: Path) -> int:
 
 def download(url: str, dest: Path, dry: bool) -> Path:
     """Resumable download with curl (falls back to urllib). Skips a complete file."""
-    final, size = head(url)
+    final, size = resolve_url(url)
     out = dest / Path(final).name
     print(f"  url  : {final}")
     print(f"  size : {human(size)}")
@@ -232,7 +281,9 @@ def cmd_list(_a) -> int:
         tag = r["tag_name"] + (" (prerelease)" if r["prerelease"] else "")
         bits = [k for k in ("package", "maps") if k in urls]
         print(f"{tag:24} {r['published_at'][:10]}  offers: {', '.join(bits) or 'nothing for ' + PLATFORM}")
-    print(f"\nplatform detected: {PLATFORM}   (nightly: {NIGHTLY})")
+    print(f"\nplatform detected: {PLATFORM}")
+    print(f"  nightly       : {NIGHTLY}")
+    print(f"  nightly --ue5 : {NIGHTLY_UE5}" + ("   (Linux only)" if PLATFORM == "Windows" else ""))
     return 0
 
 
@@ -240,7 +291,7 @@ def cmd_resolve(a) -> int:
     rel = pick_release(a.version)
     print(f"release {rel['tag_name']} ({rel['published_at'][:10]}) on {PLATFORM}:")
     for kind, url in asset_urls(rel).items():
-        final, size = head(url)
+        final, size = resolve_url(url)
         print(f"  {kind:8} {human(size):>12}  {final}")
     return 0
 
@@ -284,13 +335,27 @@ def cmd_release(a) -> int:
 
 def cmd_nightly(a) -> int:
     dest = Path(a.dest).expanduser().resolve()
-    print("CARLA nightly (Dev/CARLA_Latest)")
-    archive = download(NIGHTLY, dest, a.dry_run)
+    if a.ue5:
+        if PLATFORM == "Windows":
+            raise SystemExit("the UE5 nightly is published for Linux only "
+                             "(no Windows/Dev/CARLA_UE5_Latest.zip exists); "
+                             "use `release --version 0.10.0` for a UE5 build on Windows")
+        url, label, version = NIGHTLY_UE5, "CARLA UE5 nightly (Dev/CARLA_UE5_Latest)", "dev-ue5"
+        extra = ["note: rolling build, contents change without a tag",
+                 "this is a UE5 build: the ue4 skills do not apply, and its client is 0.10.x"]
+    else:
+        url, label, version = NIGHTLY, "CARLA nightly (Dev/CARLA_Latest)", "dev"
+        extra = ["note: rolling build, contents change without a tag"]
+    print(label)
+    archive = download(url, dest, a.dry_run)
     root = extract(archive, dest, a.dry_run)
     launcher = None if a.dry_run else find_launcher(root)
     if launcher:
         root = launcher.parent
-    report("nightly", root, "dev", ["note: rolling build, contents change without a tag"])
+    if not a.dry_run and not a.keep_archive and archive.exists():
+        print(f"  removing archive {archive.name} (--keep-archive to keep it)")
+        archive.unlink()
+    report("nightly", root, version, extra)
     return 0
 
 
@@ -347,7 +412,10 @@ def main() -> None:
     pk.set_defaults(func=cmd_release)
 
     pn = sub.add_parser("nightly", help="download + extract the rolling Dev build")
+    pn.add_argument("--ue5", action="store_true",
+                    help="the UE5 line's nightly (CARLA_UE5_Latest, ~15.7 GB, Linux only)")
     pn.add_argument("--dest", default=default_dest)
+    pn.add_argument("--keep-archive", action="store_true")
     pn.add_argument("--dry-run", action="store_true")
     pn.set_defaults(func=cmd_nightly)
 

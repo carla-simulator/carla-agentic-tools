@@ -13,6 +13,11 @@ metadata:
 
 # Run a CARLA server
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Starts a CARLA server a `carla.Client` can connect to. Use it to verify authored
 content ([[add-carla-vehicle]]), run traffic scenarios, or feed the MCP's
 live-simulator tools. It is NOT for asset editing — that is [[ue4-editor-python]]

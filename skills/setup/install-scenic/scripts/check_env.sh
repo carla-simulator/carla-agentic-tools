@@ -2,7 +2,19 @@
 # Prerequisite checks for install-scenic. Read-only, no sudo, fast.
 # Exits non-zero only on hard blockers: no interpreter, no pip.
 # A missing carla client is a WARN — install order is the skill's job to fix.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
+
+# This skill has no env.sh (nothing to resolve before it runs), so it loads the
+# recorded paths itself — otherwise a PYTHON set through set_config would be
+# invisible to the one skill whose whole job is picking that interpreter.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 PYTHON="${PYTHON:-python3}"
 rc=0
 ok(){   echo "  PASS $*"; }

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import queue
 import math
 import os
 import threading
@@ -36,10 +37,24 @@ import carla  # provided by the active interpreter; check_env.sh verifies this
 import numpy as np
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _client():
     c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                      int(os.environ.get("CARLA_PORT", "2000")))
-    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return c
 
 
@@ -129,7 +144,7 @@ def _render_frame(data, type_id, cc):
 # ---- commands --------------------------------------------------------------
 
 def cmd_info(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     sensor = _resolve(world, args)
     got = {"data": None}
     ev = threading.Event()
@@ -148,41 +163,214 @@ def cmd_info(args):
     print(f"  {_describe(got['data'])}")
 
 
+# --- waiting on the simulation, not on the wall clock ----------------------
+# These commands are observers: they never own the world's clock, so they
+# advance by waiting for whoever does (the server itself in async, the holding
+# client in sync). A fixed time.sleep() is wrong for both -- it measures wall
+# time while the thing being waited for is measured in frames, so it overruns
+# a fast server and cuts a slow one short, and in a synchronous world with a
+# stalled ticker it "succeeds" having observed nothing at all.
+
+def _for_seconds(world, seconds):
+    """Yield one snapshot per frame until `seconds` of SIMULATED time pass.
+
+    The budget is read off the world clock (`elapsed_seconds`), not summed from
+    per-frame deltas. Summing deltas counts *observed* frames, so a consumer
+    slower than the server -- a client encoding PNGs at 4 Hz against a 30 Hz
+    server, say -- accumulates 0.03 s per poll and takes minutes to "reach"
+    20 seconds. Reading the clock is correct whether or not frames are missed.
+    """
+    start = None
+    while True:
+        snapshot = world.wait_for_tick()
+        now = snapshot.timestamp.elapsed_seconds
+        if start is None:
+            start = now
+        elif now - start >= seconds:
+            return
+        yield snapshot
+
+
+def _until(world, predicate, seconds):
+    """Advance frames until predicate() is true; returns whether it became true.
+
+    The budget is simulated seconds, so a stalled clock ends this by timing out
+    in wait_for_tick() rather than by silently burning the budget.
+    """
+    if predicate():
+        return True
+    for _ in _for_seconds(world, seconds):
+        if predicate():
+            return True
+    return False
+
+
+_OWNS_CLOCK = False
+
+
+def _claim_clock(world, delta, allow_sync=True):
+    """Own the clock if it is free, so capture is lock-step with the sim.
+
+    Asked for by the clock rule the spawn skills follow: already synchronous
+    means another client owns it (observe, never tick); asynchronous means this
+    client may take it. For a capture, owning it is strictly better -- one
+    tick, one frame, no dropped or duplicated frames, and a fixed timestep so
+    the output is reproducible.
+    """
+    global _OWNS_CLOCK
+    previous = world.get_settings()
+    if previous.synchronous_mode:
+        _OWNS_CLOCK = False
+        print("world is already synchronous — another client owns the clock; "
+              "capturing as an observer")
+        return None
+    if not allow_sync:
+        _OWNS_CLOCK = False
+        return None
+    settings = world.get_settings()
+    settings.synchronous_mode = True
+    settings.fixed_delta_seconds = delta
+    world.apply_settings(settings)
+    _OWNS_CLOCK = True
+    print(f"world was asynchronous -> synchronous, fixed_delta_seconds={delta:g} "
+          f"({1.0 / delta:g} Hz), this client ticks and captures in lock-step")
+    return previous
+
+
+def _release_clock(world, previous):
+    global _OWNS_CLOCK
+    if previous is None:
+        return
+    world.apply_settings(previous)
+    _OWNS_CLOCK = False
+    print("world settings restored (asynchronous)")
+
+
+def _write_png(data, path, cc):
+    """Encode a camera image to PNG from its raw buffer."""
+    data.convert(cc)
+    frame = np.frombuffer(data.raw_data, dtype=np.uint8)
+    frame = frame.reshape((data.height, data.width, 4))[:, :, :3]   # BGRA -> BGR
+    try:
+        import cv2
+        cv2.imwrite(path, frame)
+        return
+    except ImportError:
+        pass
+    from PIL import Image                      # fallback, no cv2 on this box
+    Image.fromarray(frame[:, :, ::-1]).save(path)
+
+
 def cmd_save(args):
-    world = _client().get_world()
+    """Save sensor output, writing from the main thread rather than the callback.
+
+    The obvious implementation -- `data.save_to_disk(...)` straight inside
+    `sensor.listen()` -- deadlocks this build's client. Measured twice against
+    a healthy server: an HD camera stalled at 396 frames and a 720p one at 147,
+    both leaving the process in futex_wait with no further I/O and no error,
+    because a PNG encode takes ~0.2 s and the stream's callback machinery
+    cannot absorb a callback that slow. The server was fine throughout; it was
+    the recording client that hung.
+
+    So the callback does one cheap thing -- put the frame on a queue -- and the
+    encoding happens here, in the loop. That is the pattern CARLA's own
+    examples use, and the one that recorded four videos on this build without
+    stalling.
+    """
+    world = _fresh(_client().get_world())
     sensor = _resolve(world, args)
     os.makedirs(args.out, exist_ok=True)
     cc = _cc(sensor.type_id)
     is_img = sensor.type_id.startswith("sensor.camera")
     is_lidar = "lidar" in sensor.type_id
     jsonl = None if (is_img or is_lidar) else open(os.path.join(args.out, "data.jsonl"), "w")
-    count = {"n": 0}
 
-    def cb(data):
-        i = count["n"]
-        if args.frames and i >= args.frames:
-            return
+    previous = _claim_clock(world, args.delta, allow_sync=not args.no_sync)
+    frames = queue.Queue()
+    sensor.listen(frames.put)          # cheap: hand off and return
+
+    def write(data):
         if is_img:
-            data.save_to_disk(os.path.join(args.out, f"{data.frame:08d}.png"), cc)
+            # NOT save_to_disk. That function deadlocks this build's client:
+            # measured twice with the call inside the listen callback (HD
+            # stalled at 396 frames, 720p at 147) and once with it moved to
+            # this loop (222 frames), every time leaving the process in
+            # futex_wait with no error while a fresh client could still pull
+            # frames from the very same sensor — so the hang is inside
+            # save_to_disk's own threading, not in the callback or the server.
+            # Converting the raw buffer here and writing it ourselves is what
+            # the video-capture scripts on this build do, across thousands of
+            # frames, without stalling.
+            _write_png(data, os.path.join(args.out, f"{data.frame:08d}.png"), cc)
         elif is_lidar:
             data.save_to_disk(os.path.join(args.out, f"{data.frame:08d}.ply"))
         else:
             jsonl.write(json.dumps(_describe(data)) + "\n"); jsonl.flush()
-        count["n"] = i + 1
 
-    sensor.listen(cb)
-    # Collect until the frame cap or the time budget, whichever comes first.
-    end = time.time() + args.seconds
-    while time.time() < end and not (args.frames and count["n"] >= args.frames):
-        time.sleep(0.05)
-    sensor.stop()
-    if jsonl:
-        jsonl.close()
-    print(f"saved {count['n']} frames from id={sensor.id} ({sensor.type_id}) to {args.out}")
+    # Discard the first frames: a camera opens underexposed and its auto
+    # exposure ramps. Measured on this build, mean frame luminance went
+    # 34 -> 100 -> 114 -> 131 over the first five frames and settled near 145,
+    # reaching within 5% of settled by frame 9. Keeping them puts a black
+    # flash at the start of every video.
+    for _ in range(args.warmup):
+        if _OWNS_CLOCK:
+            world.tick()
+        try:
+            frames.get(timeout=args.frame_timeout)
+        except queue.Empty:
+            break
+    if args.warmup:
+        print(f"  discarded {args.warmup} warm-up frame(s) for auto exposure")
+
+    saved = 0
+    dropped = 0
+    first = last = None
+    try:
+        while True:
+            if args.frames and saved >= args.frames:
+                break
+            if _OWNS_CLOCK:
+                world.tick()           # exactly one frame per tick
+            try:
+                data = frames.get(timeout=args.frame_timeout)
+            except queue.Empty:
+                print(f"  no frame for {args.frame_timeout:g}s — stopping "
+                      "(is the sensor still attached and the world running?)")
+                break
+            if first is None:
+                first = data.timestamp
+            last = data.timestamp
+            write(data)
+            saved += 1
+            # The budget is simulated time, read off the frames themselves.
+            if not args.frames and last - first >= args.seconds:
+                break
+            # Encoding is slower than a 30 Hz camera, so the queue grows. Past
+            # the cap, drop the oldest rather than run the machine out of RAM:
+            # a gap in the capture is recoverable, an OOM is not.
+            while frames.qsize() > args.queue_max:
+                frames.get_nowait()
+                dropped += 1
+    finally:
+        sensor.stop()
+        if jsonl:
+            jsonl.close()
+        _release_clock(world, previous)
+    span = (last - first) if (first is not None and last is not None) else 0.0
+    print(f"saved {saved} frames from id={sensor.id} ({sensor.type_id}) to {args.out}")
+    print(f"  {span:.2f}s of simulated time, {saved / span if span else 0:.1f} frames/s"
+          + (f", {dropped} dropped to keep the queue under {args.queue_max}" if dropped else ""))
+
+
+def _elapsed(latest):
+    """Simulated seconds of sensor data seen so far (0 until the first frame)."""
+    if "t" not in latest or "t0" not in latest:
+        return 0.0
+    return latest["t"] - latest["t0"]
 
 
 def cmd_show(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     sensor = _resolve(world, args)
     is_img = sensor.type_id.startswith("sensor.camera")
     is_lidar = "lidar" in sensor.type_id
@@ -192,7 +380,8 @@ def cmd_show(args):
               f"for {args.seconds or 10}s (Ctrl-C to stop):")
         sensor.listen(lambda d: print("  ", _describe(d)))
         try:
-            time.sleep(args.seconds or 10)
+            for _ in _for_seconds(world, args.seconds or 10):
+                pass
         except KeyboardInterrupt:
             pass
         sensor.stop()
@@ -211,12 +400,18 @@ def cmd_show(args):
             frame = _lidar_topdown(data)
         with lock:
             latest["frame"] = frame
+            latest.setdefault("t0", data.timestamp)
+            latest["t"] = data.timestamp
 
     sensor.listen(cb)
     pygame.init()
     screen = None
     clock = pygame.time.Clock()
-    end = (time.time() + args.seconds) if args.seconds else None
+    # Duration in SIMULATED seconds, read off the frames themselves: a viewer
+    # bounded by wall time shows a different amount of simulation depending on
+    # how loaded the server is. pygame's clock.tick(30) below stays -- that is
+    # the window's redraw cap, not a wait on simulation state.
+    span = args.seconds or None
     running = True
     while running:
         for e in pygame.event.get():
@@ -232,7 +427,7 @@ def cmd_show(args):
             screen.blit(surf, (0, 0))
             pygame.display.flip()
         clock.tick(30)
-        if end and time.time() > end:
+        if span is not None and _elapsed(latest) >= span:
             running = False
     sensor.stop()
     pygame.quit()
@@ -242,7 +437,7 @@ def cmd_show(args):
 def cmd_grid(args):
     import cv2
     import pygame
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     ids = [int(x) for x in args.ids.split(",")]
     sensors = []
     for i in ids:
@@ -255,6 +450,7 @@ def cmd_grid(args):
     cols = math.ceil(math.sqrt(len(sensors)))
     rows = math.ceil(len(sensors) / cols)
     latest = {s.id: None for s in sensors}
+    seen = {}                    # t0/t of simulated time, for the duration budget
     lock = threading.Lock()
 
     def mk_cb(s):
@@ -264,6 +460,8 @@ def cmd_grid(args):
             if f is not None:
                 with lock:
                     latest[s.id] = cv2.resize(f, (cw, ch))
+                    seen.setdefault("t0", data.timestamp)
+                    seen["t"] = data.timestamp
         return cb
 
     for s in sensors:
@@ -272,7 +470,11 @@ def cmd_grid(args):
     screen = pygame.display.set_mode((cols * cw, rows * ch))
     pygame.display.set_caption(f"{len(sensors)} sensors")
     clock = pygame.time.Clock()
-    end = (time.time() + args.seconds) if args.seconds else None
+    # Duration in SIMULATED seconds, read off the frames themselves: a viewer
+    # bounded by wall time shows a different amount of simulation depending on
+    # how loaded the server is. pygame's clock.tick(30) below stays -- that is
+    # the window's redraw cap, not a wait on simulation state.
+    span = args.seconds or None
     running = True
     while running:
         for e in pygame.event.get():
@@ -288,7 +490,7 @@ def cmd_grid(args):
         screen.blit(pygame.surfarray.make_surface(canvas.swapaxes(0, 1)), (0, 0))
         pygame.display.flip()
         clock.tick(30)
-        if end and time.time() > end:
+        if span is not None and _elapsed(seen) >= span:
             running = False
     for s in sensors:
         s.stop()
@@ -331,7 +533,7 @@ def cmd_ros_info(args):
     Read-only, and answerable without ROS 2 installed: the names are derived from
     the actor's own attributes, exactly as the server derives them.
     """
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     sensor = _resolve(world, args)
     ros_name = sensor.attributes.get("ros_name", "") or f"actor{sensor.id}"
     frame_id = sensor.attributes.get("ros_frame_id", "") or ros_name
@@ -395,6 +597,23 @@ def main() -> None:
     ps.add_argument("--out", required=True)
     ps.add_argument("--seconds", type=float, default=10.0)
     ps.add_argument("--frames", type=int, help="stop after this many frames")
+    ps.add_argument("--warmup", type=int, default=15,
+                    help="frames to discard before saving, so auto exposure has "
+                         "settled. 0 keeps them, and the first frame is dark")
+    ps.add_argument("--no-sync", action="store_true",
+                    help="capture as a passive observer instead of taking the "
+                         "clock when the world is asynchronous")
+    ps.add_argument("--delta", type=float, default=0.05,
+                    help="fixed_delta_seconds when this client takes the clock "
+                         "(default 0.05 = 20 Hz)")
+    ps.add_argument("--queue-max", type=int, default=120,
+                    help="frames allowed to back up while encoding. Encoding is "
+                         "slower than the camera, so past this the oldest are "
+                         "dropped: a gap is recoverable, an OOM is not")
+    ps.add_argument("--frame-timeout", type=float, default=20.0,
+                    help="seconds to wait for a frame before giving up, so a "
+                         "detached sensor or a stopped world ends the run "
+                         "instead of hanging")
     ps.set_defaults(func=cmd_save)
 
     psh = _sel(sub.add_parser("show", help="live window (camera/lidar) or console stream"))

@@ -125,6 +125,22 @@ and `cloudiness` high).
 
 Direction, if asked (`sun_azimuth_angle`): sunrise ≈ 90 (E), sunset ≈ 270 (W).
 
+### Putting the sun somewhere relative to the camera
+
+The compass values above cannot answer "put the sun behind me" or "on my
+right" on their own, because nothing here says how compass north relates to
+CARLA's yaw. Measured on 0.10.0 (UE 5.8), against the spectator:
+
+    sun_azimuth_angle = <camera yaw> + 180 + <offset>
+
+with the offset in the same sense as yaw: `0` puts the sun down the view axis,
+`+90` puts it to the camera's right, `-90` to its left, `180` behind. Verified
+twice: a spectator at yaw 0 with azimuth 270 has the sun on its right, and a
+camera at yaw 25 with azimuth 180 sees the sun ahead and slightly left.
+
+A small offset rather than `0` is usually what is wanted for a shot: the sun
+dead centre floods the frame with flare instead of lighting the subject.
+
 ## Conversion workflow
 
 1. **Is it a standard condition x time?** → `preset <Name>`. ("heavy rain at

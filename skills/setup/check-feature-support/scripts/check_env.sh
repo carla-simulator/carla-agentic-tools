@@ -4,6 +4,12 @@
 # This skill has NO hard prerequisites on purpose: `matrix` and `broken` answer
 # from the skill's own text, so they work on a machine with no CARLA at all. The
 # checks below only report how much `probe` will be able to see.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091

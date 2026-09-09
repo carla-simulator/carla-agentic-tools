@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import math
 import os
-import time
 
 import carla  # provided by the active interpreter; check_env.sh verifies this
 
@@ -41,10 +40,24 @@ VIEWS = {
 }
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _client() -> carla.Client:
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client
 
 
@@ -76,6 +89,48 @@ def _resolve_actor(world, args) -> carla.Actor:
     return matches[0]
 
 
+# --- waiting on the simulation, not on the wall clock ----------------------
+# These commands are observers: they never own the world's clock, so they
+# advance by waiting for whoever does (the server itself in async, the holding
+# client in sync). A fixed time.sleep() is wrong for both -- it measures wall
+# time while the thing being waited for is measured in frames, so it overruns
+# a fast server and cuts a slow one short, and in a synchronous world with a
+# stalled ticker it "succeeds" having observed nothing at all.
+
+def _for_seconds(world, seconds):
+    """Yield one snapshot per frame until `seconds` of SIMULATED time pass.
+
+    The budget is read off the world clock (`elapsed_seconds`), not summed from
+    per-frame deltas. Summing deltas counts *observed* frames, so a consumer
+    slower than the server -- a client encoding PNGs at 4 Hz against a 30 Hz
+    server, say -- accumulates 0.03 s per poll and takes minutes to "reach"
+    20 seconds. Reading the clock is correct whether or not frames are missed.
+    """
+    start = None
+    while True:
+        snapshot = world.wait_for_tick()
+        now = snapshot.timestamp.elapsed_seconds
+        if start is None:
+            start = now
+        elif now - start >= seconds:
+            return
+        yield snapshot
+
+
+def _until(world, predicate, seconds):
+    """Advance frames until predicate() is true; returns whether it became true.
+
+    The budget is simulated seconds, so a stalled clock ends this by timing out
+    in wait_for_tick() rather than by silently burning the budget.
+    """
+    if predicate():
+        return True
+    for _ in _for_seconds(world, seconds):
+        if predicate():
+            return True
+    return False
+
+
 def _view_transform(target: carla.Transform, view: str, distance, height, pitch) -> carla.Transform:
     """Compute a spectator transform for the given view relative to `target`."""
     loc, rot = target.location, target.rotation
@@ -103,7 +158,7 @@ def _offsets(args) -> dict:
 
 
 def cmd_actors(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     actors = world.get_actors().filter(args.filter) if args.filter else world.get_actors()
     rows = [a for a in actors if not a.type_id.startswith(("traffic.", "spectator"))] if not args.all else list(actors)
     print(f"{len(rows)} actor(s)" + (f" matching {args.filter!r}" if args.filter else "") + ":")
@@ -114,7 +169,7 @@ def cmd_actors(args):
 
 
 def cmd_move(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     x, y, z = (float(v) for v in args.at.split(","))
     tf = carla.Transform(carla.Location(x, y, z),
                          carla.Rotation(pitch=args.pitch, yaw=args.yaw, roll=args.roll))
@@ -123,7 +178,7 @@ def cmd_move(args):
 
 
 def cmd_look(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     target = _resolve_actor(world, args)
     o = _offsets(args)
     world.get_spectator().set_transform(_view_transform(target.get_transform(), args.view, **o))
@@ -131,7 +186,7 @@ def cmd_look(args):
 
 
 def cmd_follow(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     target = _resolve_actor(world, args)
     spectator = world.get_spectator()
     o = _offsets(args)
@@ -146,7 +201,8 @@ def cmd_follow(args):
 
     cid = world.on_tick(_update)   # re-aim every world tick -> smooth follow
     try:
-        time.sleep(args.seconds)
+        for _ in _for_seconds(world, args.seconds):
+            pass                     # on_tick does the aiming; this paces it
     except KeyboardInterrupt:
         pass
     finally:

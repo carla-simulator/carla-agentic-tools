@@ -15,6 +15,10 @@
 #
 # Sets no shell options: this file is sourced.
 
+# Paths the install skills recorded, for keys with no value yet; an exported
+# variable still wins. See skills/_common/env_common.sh.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 export PYTHON="${PYTHON:-python3}"
 export CARLA_HOST="${CARLA_HOST:-127.0.0.1}"
 export CARLA_PORT="${CARLA_PORT:-2000}"

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Prerequisite checks for package-carla-ue4. Read-only, no sudo.
 # Exits non-zero ONLY on hard blockers; WARN means a later step handles it.
+# On-camera banner: every skill run announces itself, so a terminal recording
+# shows which skill is doing the work rather than just its output. The name is
+# taken from the directory so it cannot drift from the skill it belongs to.
+printf '\n\033[1;36m>> using skill: %s\033[0m\n' \
+  "$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")"
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Capture an EXPLICIT caller pin; the vendored env.sh sets no CARLA_PY_VERSION

@@ -145,7 +145,8 @@ def cmd_plan(args) -> None:
     print("#   scenario_runner's port:  $SCENARIO_RUNNER_ROOT/srunner/scenic/*.scenic")
     print("#   Scenic upstream:         git clone %s   (examples/ + assets/maps/)" % REPO)
     print("# Set SCENIC_ROOT to a checkout to get examples; the scenic skill group")
-    print("# needs SCENIC_ROOT set either way.")
+    print("# needs SCENIC_ROOT set either way. An export lasts until the shell")
+    print("# exits — record it with set_config to keep it.")
 
 
 def cmd_install(args) -> None:

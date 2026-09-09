@@ -12,6 +12,11 @@ metadata:
 
 # Import a pedestrian into CARLA
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 ```bash
 python3 scripts/import_walker.py ~/models/SK_AfroBoy01_G3.fbx \
     --gender male --age child --generation 3 --speed 0.0,1.1,2.0

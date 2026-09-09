@@ -11,6 +11,11 @@ metadata:
 
 # Run a scenario
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 A "scenario" here is a Python class in `srunner/scenarios/` plus an XML config in
 `srunner/examples/` that gives it a town, an ego spawn point and parameters. You
 select it by the **config name** (`FollowLeadingVehicle_1`), not the class name.

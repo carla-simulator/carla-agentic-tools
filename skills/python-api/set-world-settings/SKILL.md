@@ -11,6 +11,11 @@ metadata:
 
 # Set CARLA world settings
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Change how a **running** server steps time and renders, from a client, and read
 the result back. The deliverable is verified server state: after any change the
 `WorldSettings` are re-read (`apply_settings` returns a frame id, not the state).

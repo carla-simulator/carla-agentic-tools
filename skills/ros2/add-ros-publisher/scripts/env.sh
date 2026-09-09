@@ -11,6 +11,10 @@
 #
 # Sets no shell options on purpose: this file is sourced.
 
+# Paths the install skills recorded, for keys with no value yet; an exported
+# variable still wins. See skills/_common/env_common.sh.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 _KEEP_CARLA_ROOT="${CARLA_UE4_ROOT:-}"
 if [ -n "${CARLA_ENV_ACTIVATE:-}" ] && [ -f "${CARLA_ENV_ACTIVATE}" ]; then
   # shellcheck disable=SC1090

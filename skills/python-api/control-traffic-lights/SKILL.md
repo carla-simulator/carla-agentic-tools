@@ -11,6 +11,11 @@ metadata:
 
 # Control traffic lights
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Drive the actual `traffic.traffic_light` actors: set states, freeze them, tune
 phase timing. Not to be confused with [`control-traffic`](../control-traffic/SKILL.md)
 — that is the Traffic Manager governing how autopilot *vehicles* drive; this is

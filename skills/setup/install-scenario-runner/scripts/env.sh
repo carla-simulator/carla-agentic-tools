@@ -13,6 +13,10 @@
 
 set -euo pipefail
 
+# Paths the install skills recorded, for keys with no value yet; an exported
+# variable still wins. See skills/_common/env_common.sh.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
+
 export SCENARIO_RUNNER_ROOT="${SCENARIO_RUNNER_ROOT:-}"
 export SR_INSTALL_DIR="${SR_INSTALL_DIR:-${HOME}/scenario_runner}"
 

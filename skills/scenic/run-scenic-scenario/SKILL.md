@@ -11,6 +11,11 @@ metadata:
 
 # Run a Scenic scenario
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 A Scenic scenario is a `.scenic` file describing a *distribution* over scenes.
 Running it has two distinct phases, and almost every confusing failure comes from
 not knowing which one broke:

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import time
 
 import carla  # provided by the active interpreter; check_env.sh verifies this
 from agents.navigation.basic_agent import BasicAgent
@@ -32,10 +31,24 @@ from agents.navigation.constant_velocity_agent import ConstantVelocityAgent
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _client():
     c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                      int(os.environ.get("CARLA_PORT", "2000")))
-    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return c
 
 
@@ -61,7 +74,7 @@ def _resolve_ego(world, args) -> carla.Vehicle:
 
 
 def cmd_route(args):
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     grp = GlobalRoutePlanner(world.get_map(), args.resolution)
     route = grp.trace_route(_loc(getattr(args, "from")), _loc(args.to))
     print(f"route: {len(route)} waypoints, ~{len(route) * args.resolution:.0f} m")
@@ -90,7 +103,7 @@ def _make_agent(vehicle, args):
 
 def cmd_go(args):
     client = _client()
-    world = client.get_world()
+    world = _fresh(client.get_world())
     ego = _resolve_ego(world, args)
     ego.set_autopilot(False)  # the agent drives, not the TM
 
@@ -102,16 +115,15 @@ def cmd_go(args):
     if args.ignore_signs:
         agent.ignore_stop_signs(True)
     agent.set_destination(_loc(args.to))
-    sync = world.get_settings().synchronous_mode
 
     print(f"driving id={ego.id} ({ego.type_id}) to {args.to} with {args.agent} agent "
           f"(speed {args.speed} km/h, up to {args.seconds}s)")
-    end = time.time() + args.seconds
-    while time.time() < end:
-        if sync:
-            world.tick()
-        else:
-            world.wait_for_tick()
+    # Budget in SIMULATED seconds, and never tick a clock this client does not
+    # own: if the world is already synchronous another client is driving it, so
+    # waiting is the only correct move (ticking it drops commands silently).
+    elapsed = 0.0
+    while elapsed < args.seconds:
+        elapsed += world.wait_for_tick().timestamp.delta_seconds
         if agent.done():
             print("  arrived at destination"); return
         ego.apply_control(agent.run_step())

@@ -11,6 +11,11 @@ metadata:
 
 # Get a map into CARLA on UE 5.8
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Four different things get called "adding a map", and picking the wrong one wastes
 hours. They are not variations of one procedure:
 

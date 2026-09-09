@@ -31,7 +31,7 @@ import carla  # provided by the active interpreter; check_env.sh verifies this
 def _client() -> carla.Client:
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client
 
 

@@ -11,6 +11,11 @@ metadata:
 
 # Read actor telemetry
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Report one actor's live state. Kinematics (transform, velocity, acceleration,
 angular velocity) are read from a single `world.get_snapshot()` so they belong to
 the **same frame** — calling the per-actor getters separately can straddle two

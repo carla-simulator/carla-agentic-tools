@@ -11,6 +11,11 @@ metadata:
 
 # Build CARLA on UE 5.8
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 **This tree has no `Makefile` and no `Util/BuildTools/`.** Every UE4 recipe —
 `make CarlaUE4`, `make PythonAPI`, `make launch`, `make package`, `make import` —
 does not exist. The whole build is CMake:

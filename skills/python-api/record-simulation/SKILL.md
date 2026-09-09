@@ -11,6 +11,11 @@ metadata:
 
 # Record a CARLA simulation
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Capture a running simulation to a `.log` you can replay later ([`replay-recording`](../replay-recording/SKILL.md))
 or interrogate ([`query-recording`](../query-recording/SKILL.md)). The deliverable
 is a **verified** log: after stopping, the file is parsed back from the server to

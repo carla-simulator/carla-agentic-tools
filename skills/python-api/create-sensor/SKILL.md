@@ -11,6 +11,11 @@ metadata:
 
 # Create a sensor
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Spawn a sensor and (usually) attach it to a vehicle so it moves with it. The
 sensor persists as an actor; its **id** is printed so the
 [`read-sensor`](../read-sensor/SKILL.md) skill can save or display its data. This

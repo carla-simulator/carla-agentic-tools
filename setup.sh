@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
-# setup.sh — DEVELOPMENT convenience: editable install + .mcp.json in a checkout.
+# setup.sh — LEGACY development convenience: editable install + .mcp.json.
 #
-# Not the install path for users. Published releases are installed with
+# Superseded, and it fights the current design. Two reasons to prefer the two
+# commands below over running this:
+#
+#   * It bakes CARLA_UE4_ROOT and UE4_ROOT into the .mcp.json `env` block. An
+#     exported variable outranks the config file, so a path the user later
+#     records with set_config is silently ignored for those keys.
+#   * It requires --carla to install at all, which is the chicken-and-egg the
+#     config layer exists to remove: a newcomer has no CARLA path yet, because
+#     the skill that creates one has not run.
+#
+# What to do instead — no paths at registration, ever:
+#
+#   pip install -e .
+#   claude mcp add carla -s user -- carla-agentic-tools
+#
+# and `CARLA_SKILLS_DIR=$PWD/skills` to point an already-installed server at a
+# working tree. Published releases install with
 #   npx -y @carla-simulator/agentic-tools     (or: uvx carla-agentic-tools)
-# and configured with an `env` block in the MCP client (see README "Install").
-# Use this script when you are editing the skills in this repo and want a client
-# to pick up the working tree; `CARLA_SKILLS_DIR=$PWD/skills` does the same for an
-# already-installed server.
 #
 # What it does, idempotently:
 #   1. Installs the MCP server into the active system Python (`pip install -e .`).

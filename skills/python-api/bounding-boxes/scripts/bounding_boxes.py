@@ -26,17 +26,30 @@ import argparse
 import json
 import os
 import threading
-import time
 
 import carla  # provided by the active interpreter; check_env.sh verifies this
 import numpy as np
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _world():
     c = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                      int(os.environ.get("CARLA_PORT", "2000")))
-    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
-    return c.get_world()
+    c.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
+    return _fresh(c.get_world())
 
 
 def _targets(world, filt):
@@ -74,13 +87,56 @@ def cmd_draw(args):
     print(f"drawing {args.filter or 'vehicle.*'} boxes for {args.seconds}s "
           "(tracking motion; view on a rendered server)...")
     n = 0
-    end = time.time() + args.seconds
-    while time.time() < end:
+    for snapshot in _for_seconds(world, args.seconds):
+        # Once per frame, with a lifetime just over one frame: the boxes then
+        # track the actors instead of smearing or flickering, whatever rate the
+        # server is running at.
         actors = _targets(world, args.filter)
-        _draw_boxes(world, actors, 0.15)
+        _draw_boxes(world, actors, snapshot.timestamp.delta_seconds * 2.0)
         n = len(actors)
-        time.sleep(0.1)
     print(f"done — tracked {n} boxes for {args.seconds}s")
+
+
+# --- waiting on the simulation, not on the wall clock ----------------------
+# These commands are observers: they never own the world's clock, so they
+# advance by waiting for whoever does (the server itself in async, the holding
+# client in sync). A fixed time.sleep() is wrong for both -- it measures wall
+# time while the thing being waited for is measured in frames, so it overruns
+# a fast server and cuts a slow one short, and in a synchronous world with a
+# stalled ticker it "succeeds" having observed nothing at all.
+
+def _for_seconds(world, seconds):
+    """Yield one snapshot per frame until `seconds` of SIMULATED time pass.
+
+    The budget is read off the world clock (`elapsed_seconds`), not summed from
+    per-frame deltas. Summing deltas counts *observed* frames, so a consumer
+    slower than the server -- a client encoding PNGs at 4 Hz against a 30 Hz
+    server, say -- accumulates 0.03 s per poll and takes minutes to "reach"
+    20 seconds. Reading the clock is correct whether or not frames are missed.
+    """
+    start = None
+    while True:
+        snapshot = world.wait_for_tick()
+        now = snapshot.timestamp.elapsed_seconds
+        if start is None:
+            start = now
+        elif now - start >= seconds:
+            return
+        yield snapshot
+
+
+def _until(world, predicate, seconds):
+    """Advance frames until predicate() is true; returns whether it became true.
+
+    The budget is simulated seconds, so a stalled clock ends this by timing out
+    in wait_for_tick() rather than by silently burning the budget.
+    """
+    if predicate():
+        return True
+    for _ in _for_seconds(world, seconds):
+        if predicate():
+            return True
+    return False
 
 
 def _build_K(w, h, fov):
@@ -109,7 +165,7 @@ def cmd_project(args):
         ev.set()
 
     cam.listen(cb)
-    ok = ev.wait(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    ok = ev.wait(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     cam.stop()
     if not ok:
         raise SystemExit("no frame from the camera (is the world ticking?)")

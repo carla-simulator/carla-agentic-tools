@@ -11,6 +11,11 @@ metadata:
 
 # Toggle CARLA environment objects
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Show or hide the map's **static, baked** assets — buildings, vegetation, poles,
 fences, walls, signs — grouped by `CityObjectLabel`. These are not spawned
 actors: they come with the map. Toggling changes both **rendering and

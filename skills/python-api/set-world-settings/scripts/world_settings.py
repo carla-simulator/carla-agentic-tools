@@ -30,10 +30,24 @@ import sys
 import carla  # provided by the active interpreter; check_env.sh verifies this
 
 
+def _fresh(world):
+    """A world handle that already holds a snapshot.
+
+    In synchronous mode a freshly connected client has not seen a frame yet, so
+    `get_actors()` comes back EMPTY and every --id/--filter lookup reports "no
+    matching actor" while the scene is full of them. Observed against a live
+    world holding 48 vehicles. One frame of waiting is the whole fix, and it
+    must be a wait rather than a tick: another client owns that clock.
+    """
+    if world.get_settings().synchronous_mode:
+        world.wait_for_tick()
+    return world
+
+
 def _client() -> carla.Client:
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client
 
 
@@ -62,7 +76,7 @@ def _report(world: carla.World, tm_mode: "bool | None", note: str) -> None:
 
 
 def cmd_show(_: argparse.Namespace) -> None:
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     _report(world, None, "(current settings)")
 
 
@@ -74,7 +88,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
         sys.exit("fixed step must be > 0")
 
     client = _client()
-    world = client.get_world()
+    world = _fresh(client.get_world())
     s = world.get_settings()
     s.synchronous_mode = True
     s.fixed_delta_seconds = delta
@@ -102,7 +116,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
 
 def cmd_async(args: argparse.Namespace) -> None:
     client = _client()
-    world = client.get_world()
+    world = _fresh(client.get_world())
     s = world.get_settings()
     s.synchronous_mode = False
     s.fixed_delta_seconds = None   # None = variable, server-driven time step
@@ -115,7 +129,7 @@ def cmd_async(args: argparse.Namespace) -> None:
 
 
 def cmd_set(args: argparse.Namespace) -> None:
-    world = _client().get_world()
+    world = _fresh(_client().get_world())
     s = world.get_settings()
     changed = []
     if args.no_rendering is not None:

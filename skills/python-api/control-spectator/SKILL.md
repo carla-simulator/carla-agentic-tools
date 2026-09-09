@@ -11,6 +11,11 @@ metadata:
 
 # Control the CARLA spectator
 
+> **Paths.** `scripts/…` and `references/…` below are relative to the
+> directory holding this SKILL.md. Your working directory is the user's
+> project, not that directory, so prefix them with its absolute path or the
+> command is not found.
+
 Aim the on-screen camera (the "spectator"). Move it to a pose, frame an actor in
 a preset view, or follow a moving actor. The spectator **cannot be attached** to
 an actor (the API has no reparent for it) — following is emulated by re-setting

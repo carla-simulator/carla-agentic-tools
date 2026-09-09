@@ -35,7 +35,7 @@ STAT_STEP = 3.0
 def _world():
     client = carla.Client(os.environ.get("CARLA_HOST", "127.0.0.1"),
                           int(os.environ.get("CARLA_PORT", "2000")))
-    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "10.0")))
+    client.set_timeout(float(os.environ.get("CARLA_TIMEOUT", "60.0")))
     return client.get_world()
 
 
@@ -48,9 +48,43 @@ def _bearing(dx: float, dy: float) -> str:
 
 
 def _arms(junction: carla.Junction) -> int:
-    """Approx number of roads meeting at a junction = distinct entry road ids."""
-    roads = {entry.road_id for entry, _ in junction.get_waypoints(carla.LaneType.Driving)}
-    return len(roads)
+    """Number of streets meeting at a junction, by approach direction.
+
+    NOT the count of distinct entry road ids. `get_waypoints()` returns one
+    (entry, exit) pair per connecting lane *inside* the junction, and those
+    entry waypoints belong to the junction's internal roads -- counting their
+    road ids counts internal connections, which reports a T-junction as
+    four-armed (measured on Town10HD_Opt junction 841: 4 internal roads,
+    3 actual arms).
+
+    So each entry is walked backwards until it leaves the junction, and the
+    resulting approach headings are clustered: two lanes of the same street
+    share a heading, opposite sides of one street differ by 180 degrees and are
+    two arms.
+    """
+    headings = []
+    for entry, _ in junction.get_waypoints(carla.LaneType.Driving):
+        outside = _step_out(entry)
+        if outside is None:
+            continue
+        yaw = outside.transform.rotation.yaw % 360.0
+        if not any(min(abs(yaw - h), 360.0 - abs(yaw - h)) < 30.0
+                   for h in headings):
+            headings.append(yaw)
+    return len(headings)
+
+
+def _step_out(entry: carla.Waypoint, back: float = 4.0, limit: int = 12):
+    """Walk previous() from a junction entry until outside the junction."""
+    current = entry
+    for _ in range(limit):
+        previous = current.previous(back)
+        if not previous:
+            return None
+        current = previous[0]
+        if not current.is_junction:
+            return current
+    return None
 
 
 def _junctions(world):
