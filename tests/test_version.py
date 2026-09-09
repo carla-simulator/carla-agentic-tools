@@ -1,4 +1,4 @@
-"""The version is written in two places; make drift a test failure."""
+"""The version is written in four places; make drift a test failure."""
 import re
 import sys
 from pathlib import Path
@@ -124,3 +124,31 @@ def test_reported_version_ignores_stale_distribution_metadata():
         assert server._version() == _pyproject_version()
     finally:
         md.version = original
+
+
+# --- the Claude Code plugin ------------------------------------------------
+
+def _plugin_manifest() -> dict:
+    import json
+    return json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
+
+
+def test_plugin_version_matches_pyproject():
+    """A release is a git tag, and the plugin manifest is what Claude Code shows
+    as the installed version — drift here misreports which skills a user has."""
+    got = _plugin_manifest()["version"]
+    assert got == _pyproject_version(), (
+        f".claude-plugin/plugin.json says {got}, "
+        f"pyproject.toml says {_pyproject_version()}"
+    )
+
+
+def test_plugin_runs_a_file_that_ships():
+    """The plugin starts the Node server from its own checkout. If the path drifts
+    the server fails to start with nothing but a client-side error to go on."""
+    servers = _plugin_manifest()["mcpServers"]
+    assert servers, "the plugin must declare the MCP server"
+    for name, spec in servers.items():
+        target = next(a for a in spec["args"] if "${CLAUDE_PLUGIN_ROOT}" in a)
+        rel = target.replace("${CLAUDE_PLUGIN_ROOT}/", "")
+        assert (REPO / rel).exists(), f"{name} runs {rel}, which is missing"

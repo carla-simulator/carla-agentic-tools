@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "carla-agentic-tools"
-version = "0.5.1"
+version = "0.6.0"
 description = "MCP server exposing a library of vetted CARLA procedures (skills) for build, packaging, simulation, and ROS 2."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,7 +35,7 @@ packages = ["src/carla_agentic_tools"]
 
 # Ship the same tree in the sdist so a source build reproduces the wheel.
 [tool.hatch.build.targets.sdist]
-include = ["src", "skills", "tests", "README.md", "LICENSE", "pyproject.toml", "setup.sh"]
+include = ["src", "skills", "tests", "README.md", "LICENSE", "pyproject.toml"]
 
 # Scratch that must never reach a release artifact.
 [tool.hatch.build]
