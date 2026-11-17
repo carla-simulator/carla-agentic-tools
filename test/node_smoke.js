@@ -188,7 +188,7 @@ test("initialize echoes a known protocol version and names this package", () => 
   const r = server.dispatch({ method: "initialize", params: { protocolVersion: "2024-11-05" } });
   assert.strictEqual(r.protocolVersion, "2024-11-05", "a known version must be echoed");
   assert.strictEqual(r.serverInfo.name, "carla-agentic-tools");
-  assert.strictEqual(r.serverInfo.version, require("../package.json").version);
+  assert.strictEqual(r.serverInfo.version, require("../.claude-plugin/plugin.json").version);
   assert.ok(r.instructions.includes("set_config"), "the routing rule must ride the handshake");
 
   const unknown = server.dispatch({ method: "initialize", params: { protocolVersion: "1999-01-01" } });

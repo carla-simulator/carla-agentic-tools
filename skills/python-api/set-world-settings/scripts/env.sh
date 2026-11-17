@@ -14,7 +14,7 @@
 set -euo pipefail
 
 # Paths the install skills recorded, for keys with no value yet; an exported
-# variable still wins. See skills/_common/env_common.sh.
+# variable still wins. See Skills/_common/env_common.sh.
 . "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
 
 export CARLA_HOST="${CARLA_HOST:-127.0.0.1}"

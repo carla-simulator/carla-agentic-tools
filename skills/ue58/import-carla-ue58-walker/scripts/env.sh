@@ -17,7 +17,7 @@
 set -euo pipefail
 
 # Paths the install skills recorded, for keys with no value yet; an exported
-# variable still wins. See skills/_common/env_common.sh.
+# variable still wins. See Skills/_common/env_common.sh.
 . "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
 
 export CARLA_PRESET="${CARLA_PRESET:-Release}"
@@ -78,7 +78,7 @@ carla_ue58_flavor() {
 
 # Newest packaged server launcher produced by the `package` target.
 carla_ue58_package_sh() {
-  ls -1dt "${CARLA_UE58_ROOT:-/nonexistent}"/Build/*/Package/Carla-*/Linux/CarlaUnreal.sh 2>/dev/null | head -1
+  ls -1dt "${CARLA_UE58_ROOT:-/nonexistent}"/Build/*/Package/Carla-*/CarlaUnreal.sh 2>/dev/null | head -1
 }
 
 # --- resolution --------------------------------------------------------------

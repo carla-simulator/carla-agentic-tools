@@ -33,11 +33,23 @@ try:  # mcp >= 2.0
 except ImportError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP as _MCPServer
 
+# Raise ToolError, not ValueError, for an anticipated failure: mcp 2.x treats any
+# other exception as a crash and sends the client only "Error executing tool X",
+# dropping the message that tells the agent what to fix.
+try:  # mcp >= 2.0
+    from mcp.server.mcpserver.exceptions import ToolError
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp.exceptions import ToolError
+
+
+class SkillError(ToolError, ValueError):
+    """An anticipated tool failure: shown to the client, and still a ValueError."""
+
 def _resolve_skills_dir() -> Path:
     """Locate the skill library, installed or in a checkout.
 
-    Two layouts must both work, because the same code serves `uvx
-    carla-agentic-tools` and a developer's `pip install -e .`:
+    Two layouts must both work, because the same code serves an installed wheel
+    and a developer's `pip install -e .`:
 
       installed  <site-packages>/carla_agentic_tools/skills/   (wheel package data)
       checkout   <repo root>/skills/                           (source of truth)
@@ -77,7 +89,10 @@ GROUP_REQUIREMENTS = {
     # that names the wrong engine branch sends the user into a multi-hour build of
     # the wrong thing. If the branches converge later, merge the groups then.
     "ue5": (("CARLA_UE5_ROOT",), "a CARLA ue5-dev checkout (UE 5.5)"),
-    "ue58": (("CARLA_UE58_ROOT",), "a CARLA ue58-dev checkout (UE 5.8)"),
+    # A standalone package is enough for run-carla-ue58-server, so it opens the
+    # group too; the build skills still ask for the checkout they need.
+    "ue58": (("CARLA_UE58_ROOT", "CARLA_TARGET", "CARLA_PACKAGE_ROOT"),
+             "a CARLA ue58-dev checkout (UE 5.8) or a standalone package"),
     "scenario-runner": (("SCENARIO_RUNNER_ROOT",), "a scenario_runner checkout"),
     "leaderboard": (("LEADERBOARD_ROOT",), "a leaderboard checkout (plus its matching scenario_runner)"),
     "scenic": (("SCENIC_ROOT",), "a Scenic install"),
@@ -90,8 +105,8 @@ GROUP_REQUIREMENTS = {
 SERVER_INSTRUCTIONS = """\
 CARLA build, packaging, cooking, map, vehicle, asset, and server/simulation
 tasks have vetted procedures in this server's skill library, each with its
-failure modes encoded. The skills are the source of truth for these tasks;
-the raw Makefile and Util/BuildTools scripts are a fallback when none matches.
+failure modes encoded. The skills are the source of truth for these tasks and
+cover most of the commands they need.
 list_skills finds a skill, read_skill(name) returns its procedure,
 check_prerequisites(name) verifies its environment.
 
@@ -105,25 +120,11 @@ set_config derives the engine-specific variable that gates ue4/ue5/ue58.
 """
 
 def _version() -> str:
-    """This package's version, as the client will be shown it.
-
-    Read from `__version__`, which ships inside the package, rather than from
-    installed distribution metadata: the metadata is absent in a bare checkout
-    and stale whenever a different version is installed alongside, and either
-    way FastMCP then reports the *SDK* release instead. Distribution metadata is
-    the fallback for the reverse case, a package without __version__.
-    """
+    """The version clients are shown; without it FastMCP reports the SDK's."""
     try:
         from . import __version__
 
-        if __version__:
-            return __version__
-    except Exception:
-        pass
-    try:
-        from importlib.metadata import version
-
-        return version("carla-agentic-tools")
+        return __version__
     except Exception:
         return ""
 
@@ -256,8 +257,8 @@ def list_skills(group: str | None = None) -> list[dict]:
     """List the available CARLA skills as {name, group, description, available} entries.
 
     The library is the source of procedure for CARLA tasks — match a skill by
-    its description and call read_skill(name), rather than improvising from the
-    Makefile.
+    its description and call read_skill(name), rather than improvising the
+    procedure.
 
     Groups say what a skill binds to: `python-api` drives any running server,
     `ue4`/`ue5`/`ue58` need that engine's checkout, `ros2` covers the native ROS 2
@@ -294,7 +295,7 @@ def read_skill(name: str) -> str:
     """
     d = _find_skill(name)
     if d is None:
-        raise ValueError(f"unknown skill {name!r}; see list_skills()")
+        raise SkillError(f"unknown skill {name!r}; see list_skills()")
     # The document reaches its scripts and references by paths relative to its
     # own directory, and the client's working directory is the user's project.
     # An MCP client has never seen a filesystem path for this skill, so state it
@@ -326,10 +327,10 @@ def check_prerequisites(name: str) -> str:
     """
     d = _find_skill(name)
     if d is None:
-        raise ValueError(f"unknown skill {name!r}; see list_skills()")
+        raise SkillError(f"unknown skill {name!r}; see list_skills()")
     script = d / "scripts" / "check_env.sh"
     if not script.is_file():
-        raise ValueError(f"skill {name!r} has no prerequisite checks (scripts/check_env.sh)")
+        raise SkillError(f"skill {name!r} has no prerequisite checks (scripts/check_env.sh)")
     proc = subprocess.run(
         ["bash", str(script)],
         capture_output=True, text=True, timeout=120,
@@ -439,7 +440,7 @@ def set_config(paths: dict[str, str]) -> str:
     notes: list[str] = []
     for key, raw in paths.items():
         if key not in _cfg.CONFIG_KEYS and key not in _cfg.DERIVED_KEYS:
-            raise ValueError(f"unknown key {key!r}; see get_config()")
+            raise SkillError(f"unknown key {key!r}; see get_config()")
         if not raw:
             updates[key] = ""
             notes.append(f"{key} cleared")
@@ -449,12 +450,12 @@ def set_config(paths: dict[str, str]) -> str:
         # otherwise leave the group unavailable with no sign the answer was wrong.
         ok, why = _cfg.validate(key, str(p))
         if not ok:
-            raise ValueError(f"{key}: {why}")
+            raise SkillError(f"{key}: {why}")
         updates[key] = str(p)
         if key == "CARLA_ROOT":
             info = _cfg.detect_carla(p)
             if info["kind"] == "none":
-                raise ValueError(f"CARLA_ROOT: {info['detail']} at {p}")
+                raise SkillError(f"CARLA_ROOT: {info['detail']} at {p}")
             updates.update(info["vars"])
             notes.append(f"CARLA_ROOT is {info['detail']}; "
                          f"also set {', '.join(k for k in info['vars'] if k != 'CARLA_ROOT')}")
@@ -470,7 +471,7 @@ def set_config(paths: dict[str, str]) -> str:
 
 
 def main() -> None:
-    """Console-script entrypoint: serve over stdio."""
+    """Serve over stdio."""
     mcp.run()
 
 
