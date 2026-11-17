@@ -1,8 +1,7 @@
 """The Node and Python servers must answer alike.
 
-Two implementations of one protocol drift silently, and the symptom is a user on
-`npx` being told a skill is available when the `uvx` user is told it is not. So
-run both over real stdio against the same skills and the same config, and diff
+Two implementations of one protocol drift silently, and the symptom is one
+server calling a skill available while the other says it is not. So run both over real stdio against the same skills and the same config, and diff
 what comes back.
 
 Skipped when no `node` is on PATH — a Python-only contributor should not be
@@ -203,8 +202,8 @@ def test_set_config_rejects_the_same_paths(pair, tmp_path):
 def test_group_requirements_are_declared_in_both(pair):
     """The gating tables are hand-maintained in two languages.
 
-    A group added to one and not the other makes the same skill usable on `uvx`
-    and unusable on `npx` — so compare the tables directly, not just their
+    A group added to one and not the other makes the same skill usable on one
+    server and unusable on the other — so compare the tables directly, not just their
     effect on the skills that happen to exist today.
     """
     py_src = (REPO / "src/carla_agentic_tools/server.py").read_text()

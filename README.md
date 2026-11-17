@@ -75,7 +75,9 @@ carla-agentic-tools/
     ├── ros2/                 # native ROS 2 interface (publishers, msg types, RViz)
     ├── scenario-runner/      # CARLA's scenario engine (scenarios, OpenSCENARIO, routes)
     ├── leaderboard/          # the AD Leaderboard on top of it (agents, evaluation, scoring)
-    └── scenic/               # probabilistic scenarios (write and run .scenic)
+    ├── scenic/               # probabilistic scenarios (write and run .scenic)
+    ├── docs/                 # audit and write CARLA's documentation (needs a carla checkout)
+    └── contributing/         # issues, discussions and PRs against ue58-dev
 ```
 
 **Starting from nothing?** Three skills, in order: `download-carla` (fetches a
@@ -112,7 +114,12 @@ it as naming the UE5 line unless it is quoting a specific build.
 
 `python-api`, `scenario-runner`, `leaderboard`, `scenic` and `ros2` are not tied
 to an engine: they bind to a running server, a checkout of the companion repo, or
-CARLA's native ROS 2 sources.
+CARLA's native ROS 2 sources. `docs` and `contributing` act on a carla checkout
+itself — the recorded `CARLA_ROOT`, or the directory you run them from.
+
+The skills are mirrored from [`Skills/`](https://github.com/carla-simulator/carla/tree/ue58-dev/Skills)
+in the carla repo (branch `ue58-dev`), which is where they are developed; this
+repo packages them for installing without a carla checkout.
 
 ## Two servers, one library
 
@@ -187,11 +194,11 @@ needs no reinstall:
 | spec | effect |
 |---|---|
 | `github:carla-simulator/carla-agentic-tools` | `main`, as it is now |
-| `github:carla-simulator/carla-agentic-tools#v0.6.0` | frozen at a tag — **the reproducible form** |
+| `github:carla-simulator/carla-agentic-tools#v0.7.0` | frozen at a tag — **the reproducible form** |
 | `github:carla-simulator/carla-agentic-tools#<sha>` | frozen at a commit |
-| `.../archive/refs/tags/v0.6.0.tar.gz` | the same tag, without needing `git` |
+| `.../archive/refs/tags/v0.7.0.tar.gz` | the same tag, without needing `git` |
 
-For `uvx`, append `@v0.6.0` to the `git+https://…` URL, and `uvx --refresh` to
+For `uvx`, append `@v0.7.0` to the `git+https://…` URL, and `uvx --refresh` to
 bypass its cache.
 
 **The caching is worth understanding**, because it is the one place a
@@ -209,8 +216,8 @@ Installing the package outright puts a `carla-agentic-tools` executable on
 resolution step:
 
 ```bash
-npm install -g github:carla-simulator/carla-agentic-tools#v0.6.0
-uv tool install git+https://github.com/carla-simulator/carla-agentic-tools@v0.6.0
+npm install -g github:carla-simulator/carla-agentic-tools#v0.7.0
+uv tool install git+https://github.com/carla-simulator/carla-agentic-tools@v0.7.0
 ```
 
 Register it as `command: "carla-agentic-tools"` with empty `args`. Upgrades
@@ -392,14 +399,14 @@ account to hold:
 ```bash
 pytest -q tests/ && node test/node_smoke.js    # both suites
 claude plugin validate . --strict              # the plugin manifests
-git tag v0.6.0 && git push origin v0.6.0       # what the install specs pin
-claude plugin tag . --push                     # carla--v0.6.0, for the plugin
+git tag v0.7.0 && git push origin v0.7.0       # what the install specs pin
+claude plugin tag . --push                     # carla--v0.7.0, for the plugin
 ```
 
 **Two tag names, one release.** `v<version>` is what the `npx`/`uvx` specs above
 name. Claude Code derives a plugin's version from a `{name}--v{version}` tag
 instead — it records the commit SHA and a tag-derived semver for a git-installed
-plugin — so `claude plugin tag` creates `carla--v0.6.0`, after checking that
+plugin — so `claude plugin tag` creates `carla--v0.7.0`, after checking that
 `plugin.json` and the marketplace entry agree. It refuses on a dirty tree, which
 is the behaviour you want from a release step.
 

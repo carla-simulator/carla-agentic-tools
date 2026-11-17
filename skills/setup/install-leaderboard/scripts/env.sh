@@ -15,7 +15,7 @@
 set -euo pipefail
 
 # Paths the install skills recorded, for keys with no value yet; an exported
-# variable still wins. See skills/_common/env_common.sh.
+# variable still wins. See Skills/_common/env_common.sh.
 . "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
 
 export LEADERBOARD_ROOT="${LEADERBOARD_ROOT:-}"
@@ -23,7 +23,7 @@ export SCENARIO_RUNNER_ROOT="${SCENARIO_RUNNER_ROOT:-}"
 export LB_INSTALL_DIR="${LB_INSTALL_DIR:-${HOME}}"
 
 if [ -z "${CARLA_ROOT:-}" ]; then
-  for _c in "${CARLA_TARGET:-}" "${CARLA_PACKAGE_ROOT:-}" "${CARLA_UE4_ROOT:-}"; do
+  for _c in "${CARLA_TARGET:-}" "${CARLA_PACKAGE_ROOT:-}" "${CARLA_UE4_ROOT:-}" "${CARLA_UE58_ROOT:-}" "${CARLA_UE5_ROOT:-}"; do
     if [ -n "${_c}" ] && [ -d "${_c}/PythonAPI/carla" ]; then CARLA_ROOT="${_c}"; break; fi
   done
 fi

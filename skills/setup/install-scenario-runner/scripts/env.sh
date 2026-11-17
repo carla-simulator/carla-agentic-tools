@@ -8,20 +8,24 @@
 #   SCENARIO_RUNNER_ROOT  existing checkout to switch/verify (optional)
 #   SR_INSTALL_DIR        where to clone when there is none  (default ~/scenario_runner)
 #   CARLA_ROOT            CARLA release/checkout — source of the `agents` package
+#                         (falls back to CARLA_UE58_ROOT / CARLA_UE5_ROOT when unset)
 #   CARLA_HOST/CARLA_PORT a running server, used only to read its version
 #   PYTHON                interpreter that will import carla (default python3)
 
 set -euo pipefail
 
 # Paths the install skills recorded, for keys with no value yet; an exported
-# variable still wins. See skills/_common/env_common.sh.
+# variable still wins. See Skills/_common/env_common.sh.
 . "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
 
 export SCENARIO_RUNNER_ROOT="${SCENARIO_RUNNER_ROOT:-}"
 export SR_INSTALL_DIR="${SR_INSTALL_DIR:-${HOME}/scenario_runner}"
 
 if [ -z "${CARLA_ROOT:-}" ]; then
-  for _c in "${CARLA_TARGET:-}" "${CARLA_PACKAGE_ROOT:-}" "${CARLA_UE4_ROOT:-}"; do
+  # CARLA_UE58_ROOT (UE 5.8 tree) and CARLA_UE5_ROOT (UE 5.5 tree) are what
+  # set_config records for UE5 source checkouts.
+  for _c in "${CARLA_TARGET:-}" "${CARLA_PACKAGE_ROOT:-}" "${CARLA_UE4_ROOT:-}" \
+            "${CARLA_UE58_ROOT:-}" "${CARLA_UE5_ROOT:-}"; do
     if [ -n "${_c}" ] && [ -d "${_c}/PythonAPI/carla" ]; then CARLA_ROOT="${_c}"; break; fi
   done
 fi

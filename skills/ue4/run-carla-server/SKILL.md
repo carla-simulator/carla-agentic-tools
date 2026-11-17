@@ -95,7 +95,7 @@ Run Progress:
 ## Quick start
 
 ```bash
-cd skills/run-carla-server
+cd Skills/ue4/run-carla-server
 bash scripts/check_env.sh
 
 # headless smoke-test server, backgrounded DETACHED (see the note below)

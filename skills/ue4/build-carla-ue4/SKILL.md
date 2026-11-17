@@ -94,7 +94,7 @@ Set the roots (`scripts/env.sh` resolves them, all overridable):
 ## Quick start
 
 ```bash
-cd skills/build-carla-ue4
+cd Skills/ue4/build-carla-ue4
 source ~/carla-client/bin/activate     # activate ANY compatible client env first
 export UE4_ROOT=/path/to/UnrealEngine_4.26
 export CARLA_UE4_ROOT=/path/to/carla   # or run from inside the checkout

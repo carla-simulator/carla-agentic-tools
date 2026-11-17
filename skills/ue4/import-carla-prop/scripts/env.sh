@@ -2,8 +2,9 @@
 # Self-contained environment for the import-carla-prop skill.
 # Source before the skill's other scripts:  source env.sh
 #
-# carla-agentic-tools is standalone (not inside a CARLA checkout), so the target
-# instance is chosen at runtime. Both roots are overridable and must point at a
+# The skill library is engine-agnostic — it ships inside a CARLA checkout but
+# not necessarily the ue4-dev one this skill targets — so the target instance
+# is chosen at runtime. Both roots are overridable and must point at a
 # real, built CARLA + UE4:
 #
 #   CARLA_UE4_ROOT  the carla source checkout to import into
@@ -23,7 +24,7 @@
 # detected: no environment-manager binary is probed, no dotfile is searched for.
 # Roots the caller exported explicitly outrank anything that script sets.
 # Paths the install skills recorded, for keys with no value yet; an exported
-# variable still wins. See skills/_common/env_common.sh.
+# variable still wins. See Skills/_common/env_common.sh.
 . "$(dirname "${BASH_SOURCE[0]}")/../../../_common/env_common.sh"
 
 _KEEP_CARLA_ROOT="${CARLA_UE4_ROOT:-}" _KEEP_UE4_ROOT="${UE4_ROOT:-}"
